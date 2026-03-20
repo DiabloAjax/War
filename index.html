@@ -1,0 +1,3273 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Room Planner</title>
+  <style>
+    :root {
+      --bg: #f5efe5;
+      --panel: rgba(255, 250, 243, 0.94);
+      --line: rgba(76, 53, 30, 0.14);
+      --text: #2d2218;
+      --muted: #7a6653;
+      --accent: #cc5c2d;
+      --ok: #2f915d;
+      --warn: #c78a1d;
+      --shadow: 0 18px 40px rgba(72, 50, 27, 0.12);
+      --radius: 18px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      color: var(--text);
+      scrollbar-width: thin;
+      scrollbar-color: rgba(150, 113, 84, 0.58) rgba(255, 250, 243, 0.58);
+      background:
+        radial-gradient(circle at top left, rgba(241, 191, 113, 0.35), transparent 26%),
+        linear-gradient(180deg, #f7f1e8 0%, #efe5d6 100%);
+    }
+
+    body::-webkit-scrollbar,
+    .pool::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    body::-webkit-scrollbar-track,
+    .pool::-webkit-scrollbar-track {
+      background: rgba(255, 250, 243, 0.56);
+      border-radius: 999px;
+      box-shadow: inset 0 0 0 1px rgba(76, 53, 30, 0.05);
+    }
+
+    body::-webkit-scrollbar-thumb,
+    .pool::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      border: 1px solid rgba(255, 250, 243, 0.88);
+      background:
+        linear-gradient(180deg, rgba(176, 137, 106, 0.9) 0%, rgba(154, 115, 86, 0.9) 100%);
+      box-shadow: 0 2px 8px rgba(113, 63, 31, 0.10);
+    }
+
+    body::-webkit-scrollbar-thumb:hover,
+    .pool::-webkit-scrollbar-thumb:hover {
+      background:
+        linear-gradient(180deg, rgba(166, 128, 98, 0.96) 0%, rgba(144, 106, 78, 0.96) 100%);
+    }
+
+    body::-webkit-scrollbar-corner,
+    .pool::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    .app {
+      width: min(1400px, calc(100vw - 24px));
+      margin: 12px auto 24px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      transition: box-shadow 180ms ease, transform 180ms ease, border-color 180ms ease;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: clamp(1.9rem, 3vw, 3rem); line-height: 0.95; }
+    .sub { margin-top: 8px; color: var(--muted); max-width: 760px; }
+
+    .status {
+      display: inline-flex;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.8);
+      border: 1px solid var(--line);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--warn);
+      animation: pulse 1.7s infinite;
+    }
+
+    .ready .dot { background: var(--ok); }
+    .syncing .dot { background: var(--warn); }
+
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(199, 138, 29, 0.45); }
+      100% { box-shadow: 0 0 0 10px rgba(199, 138, 29, 0); }
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 16px;
+      align-items: start;
+      position: relative;
+      transition: grid-template-columns 220ms ease, gap 220ms ease;
+    }
+
+    .layout.collapsed {
+      grid-template-columns: 56px 1fr;
+    }
+
+    .stack { display: grid; gap: 12px; }
+    .stats { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 0.92rem; }
+    label { display: grid; gap: 6px; color: var(--muted); font-size: 0.92rem; }
+    input, select, button { font: inherit; }
+
+    input[type="text"], select {
+      width: 100%;
+      padding: 12px 13px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.9);
+      color: var(--text);
+    }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    button {
+      border: none;
+      border-radius: 999px;
+      cursor: pointer;
+      padding: 11px 16px;
+    }
+
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .primary { background: var(--accent); color: white; }
+    .secondary { background: rgba(255,255,255,0.85); color: var(--text); border: 1px solid var(--line); }
+
+    .message {
+      min-height: 44px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    .message.error { color: #c64b4b; }
+    .message.success { color: var(--ok); }
+
+    .rooms {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .room, .pool {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255,255,255,0.62);
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      align-content: start;
+      transition: border-color 180ms ease, transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+
+    .room:hover,
+    .pool:hover {
+      box-shadow: 0 16px 32px rgba(72, 50, 27, 0.10);
+    }
+
+    .room-empty {
+      background: rgba(255,255,255,0.58);
+      border-color: rgba(76, 53, 30, 0.12);
+    }
+
+    .room-partial {
+      background: rgba(255, 248, 236, 0.86);
+      border-color: rgba(199, 138, 29, 0.26);
+    }
+
+    .room-nearfull {
+      background: rgba(255, 241, 232, 0.92);
+      border-color: rgba(204, 92, 45, 0.34);
+      box-shadow: 0 14px 28px rgba(204, 92, 45, 0.10);
+    }
+
+    .room-full {
+      background: rgba(236, 249, 242, 0.92);
+      border-color: rgba(47, 145, 93, 0.34);
+      box-shadow: 0 14px 28px rgba(47, 145, 93, 0.10);
+    }
+
+    .panel.flash-copy,
+    .room.flash-copy {
+      animation: flashCopy 260ms ease;
+    }
+
+    @keyframes flashCopy {
+      0% {
+        background: rgba(47,145,93,0.18);
+      }
+      100% {
+        background: rgba(255,255,255,0.62);
+      }
+    }
+
+    .room, .pool { min-height: 180px; }
+
+    .sidebar {
+      align-self: start;
+      position: sticky;
+      top: 12px;
+      height: calc(100vh - 24px);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: stretch;
+      transition: width 220ms ease, min-width 220ms ease, padding 220ms ease, box-shadow 180ms ease;
+    }
+
+    .sidebar > .stack {
+      min-height: 0;
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto auto auto;
+      align-content: start;
+      justify-items: stretch;
+    }
+
+    .layout.collapsed .sidebar {
+      width: 56px;
+      min-width: 56px;
+      height: auto;
+      padding: 8px;
+      overflow: visible;
+    }
+
+    .layout.collapsed .sidebar > .stack {
+      grid-template-rows: auto;
+      height: auto;
+    }
+
+    .sidebar-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: grid;
+      gap: 10px;
+      padding-top: 2px;
+      padding-bottom: 6px;
+      align-content: start;
+      background: linear-gradient(180deg, rgba(255,250,243,0.98) 0%, rgba(255,250,243,0.92) 100%);
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+
+    .layout.collapsed .sidebar-toolbar {
+      position: static;
+      gap: 0;
+      padding: 0;
+      padding-bottom: 0;
+      background: transparent;
+    }
+
+    .sidebar-header {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      align-content: flex-start;
+      gap: 8px;
+      margin-top: -2px;
+    }
+
+    .sidebar-file-row {
+      display: flex;
+      justify-content: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .sidebar-header #openJsonBtn,
+    .sidebar-file-row {
+      display: none;
+    }
+
+    .json-start-card {
+      display: grid;
+      gap: 14px;
+      text-align: left;
+    }
+
+    .json-start-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .layout.collapsed .sidebar-header {
+      justify-content: center;
+      min-height: 40px;
+      margin-top: 0;
+    }
+
+    .toggle-button {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.96);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 12px 24px rgba(72, 50, 27, 0.14);
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease, border-color 140ms ease;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .toggle-button:hover,
+    .lang-button:hover,
+    .upload-button:hover,
+    .copy-button:hover,
+    .room-copy-button:hover,
+    .icon-button:hover,
+    .color-trigger:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(72, 50, 27, 0.14);
+      border-color: rgba(204, 92, 45, 0.26);
+    }
+
+    .toggle-button:active,
+    .lang-button:active,
+    .upload-button:active,
+    .copy-button:active,
+    .room-copy-button:active,
+    .icon-button:active,
+    .color-trigger:active {
+      transform: translateY(0) scale(0.97);
+      box-shadow: 0 6px 14px rgba(72, 50, 27, 0.12);
+    }
+
+    .drop-target {
+      border-color: rgba(204,92,45,0.58);
+      transform: translateY(-2px);
+      box-shadow: 0 0 0 4px rgba(204,92,45,0.08);
+    }
+
+    .touch-drop-target {
+      border-color: rgba(204,92,45,0.72);
+      background: rgba(255, 236, 223, 0.94);
+      transform: translateY(-3px) scale(1.01);
+      box-shadow: 0 0 0 6px rgba(204,92,45,0.18), 0 18px 28px rgba(204,92,45,0.12);
+    }
+
+    .room-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .small { color: var(--muted); font-size: 0.84rem; }
+
+    .pill {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.84);
+      border: 1px solid var(--line);
+      font-size: 0.85rem;
+    }
+
+    .pill-current.incomplete {
+      color: #c64b4b;
+      font-weight: 700;
+    }
+
+    .pill-current.overfull {
+      color: #c64b4b;
+      font-weight: 700;
+    }
+
+    .cards { display: grid; gap: 5px; align-content: start; }
+
+    .empty {
+      padding: 14px;
+      border: 1px dashed var(--line);
+      border-radius: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .player {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 6px 8px;
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+      max-width: 100%;
+      box-shadow: 0 10px 20px rgba(70, 48, 26, 0.08);
+      animation: fade 180ms ease;
+      transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, background 150ms ease;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    .player.dragging { opacity: 0.45; }
+
+    .player:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 24px rgba(70, 48, 26, 0.10);
+      border-color: rgba(204, 92, 45, 0.18);
+    }
+
+    @keyframes fade {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .player-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+    }
+
+    .identity {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+
+    .identity > div {
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+      flex: none;
+    }
+
+    .name {
+      display: block;
+      font-weight: 700;
+      font-size: 0.92rem;
+      min-width: 0;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .name mark {
+      background: rgba(243, 167, 18, 0.28);
+      color: inherit;
+      padding: 0 2px;
+      border-radius: 4px;
+    }
+
+    .icon-button {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: 999px;
+      background: rgba(245,239,229,0.95);
+      color: var(--text);
+      border: 1px solid var(--line);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      line-height: 1;
+      transition: transform 140ms ease, background 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .player-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: none;
+      min-width: fit-content;
+    }
+
+    .room-jump {
+      width: 56px;
+      height: 28px;
+      padding: 0 6px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.94);
+      color: var(--text);
+      font-size: 0.76rem;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 5px;
+      max-height: 0;
+      opacity: 0;
+      overflow: hidden;
+      transform: translateY(-4px);
+      transition: max-height 180ms ease, opacity 160ms ease, transform 180ms ease, margin-top 180ms ease;
+    }
+
+    .player.expanded .controls {
+      max-height: 220px;
+      opacity: 1;
+      overflow: visible;
+      transform: translateY(0);
+    }
+
+    .color-dropdown {
+      position: relative;
+      display: inline-grid;
+      align-items: start;
+    }
+
+    .color-trigger {
+      width: 42px;
+      height: 42px;
+      padding: 0;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background 140ms ease;
+    }
+
+    .color-trigger-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.14);
+    }
+
+    .color-menu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 10;
+      display: grid;
+      grid-template-columns: repeat(4, 28px);
+      gap: 8px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.98);
+      box-shadow: 0 16px 30px rgba(72, 50, 27, 0.16);
+      transform-origin: top right;
+      animation: popIn 140ms ease;
+    }
+
+    .color-menu[hidden] {
+      display: none;
+    }
+
+    .color-dot {
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+      cursor: pointer;
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+    }
+
+    .color-dot.active {
+      border-color: #fff;
+      box-shadow: 0 0 0 2px rgba(45,34,24,0.38);
+    }
+
+    .color-dot:hover {
+      transform: scale(1.08);
+    }
+
+    .pool {
+      padding: 10px;
+      gap: 8px;
+      min-height: 0;
+      height: 100%;
+      overflow: auto;
+      align-content: start;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(150, 113, 84, 0.62) rgba(255, 250, 243, 0.6);
+    }
+
+    .pool .cards {
+      gap: 8px;
+    }
+
+    .pool .player {
+      padding: 9px 10px;
+      gap: 6px;
+      border-radius: 12px;
+    }
+
+    .pool .icon-button {
+      width: 30px;
+      height: 30px;
+      font-size: 0.9rem;
+    }
+
+    .pool .swatch {
+      width: 14px;
+      height: 14px;
+    }
+
+    .main-panel {
+      min-height: min(88vh, 1280px);
+    }
+
+    .rooms-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+      align-items: center;
+      gap: 12px;
+      padding-bottom: 6px;
+      background: linear-gradient(180deg, rgba(255,250,243,0.98) 0%, rgba(255,250,243,0.92) 100%);
+    }
+
+    .search-input {
+      width: 100%;
+    }
+
+    .search-wrap {
+      position: relative;
+      width: 100%;
+      min-width: 0;
+      height: 44px;
+      transition: transform 140ms ease;
+    }
+
+    .search-wrap .search-input {
+      width: 100%;
+      height: 44px;
+      display: block;
+      padding-left: 38px;
+      padding-right: 34px;
+      background: rgba(255,255,255,0.96);
+      transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
+
+    .search-wrap .search-input:focus {
+      outline: none;
+      border-color: rgba(204, 92, 45, 0.34);
+      box-shadow: 0 0 0 4px rgba(204, 92, 45, 0.08);
+      background: rgba(255,255,255,1);
+    }
+
+    .search-icon {
+      position: absolute;
+      top: 50%;
+      left: 12px;
+      transform: translateY(-50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1;
+      height: 14px;
+      pointer-events: none;
+    }
+
+    .search-clear {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      margin: 0;
+      transition: color 140ms ease, transform 140ms ease, opacity 140ms ease;
+    }
+
+    .search-clear[hidden] {
+      display: none;
+    }
+
+    .search-clear:hover {
+      color: var(--text);
+      transform: translateY(-50%) scale(1.08);
+    }
+
+    .copy-button {
+      height: 44px;
+      width: 44px;
+      min-width: 44px;
+      padding: 0;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.94);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      transition: transform 140ms ease, background 140ms ease, box-shadow 140ms ease;
+    }
+
+    .room-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .room-copy-button {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.94);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.84rem;
+      transition: transform 140ms ease, background 140ms ease, box-shadow 140ms ease;
+    }
+
+    .upload-button {
+      height: 34px;
+      padding: 0 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.96);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      white-space: nowrap;
+      font-size: 0.9rem;
+    }
+
+    .lang-button {
+      height: 34px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.96);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      box-shadow: 0 10px 22px rgba(72, 50, 27, 0.10);
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease, border-color 140ms ease;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    .help-button {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.96);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      font-weight: 700;
+      box-shadow: 0 10px 22px rgba(72, 50, 27, 0.10);
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease, border-color 140ms ease;
+    }
+
+    .copy-button.copied,
+    .room-copy-button.copied {
+      background: rgba(47,145,93,0.14);
+      box-shadow: 0 0 0 3px rgba(47,145,93,0.14);
+      transform: scale(0.96);
+    }
+
+    .player.match {
+      box-shadow: 0 0 0 3px rgba(204,92,45,0.18), 0 10px 20px rgba(70, 48, 26, 0.08);
+      border-color: rgba(204,92,45,0.5);
+      animation: matchPulse 1.2s ease;
+    }
+
+    .modal[hidden] {
+      display: none;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(45, 34, 24, 0.42);
+      backdrop-filter: blur(8px);
+      animation: fadeIn 180ms ease;
+    }
+
+    .modal-dialog {
+      position: relative;
+      width: min(940px, calc(100vw - 32px));
+      max-height: min(88vh, 920px);
+      overflow: auto;
+      border: 1px solid rgba(76, 53, 30, 0.12);
+      border-radius: 28px;
+      background:
+        radial-gradient(circle at top left, rgba(241, 191, 113, 0.16), transparent 32%),
+        linear-gradient(180deg, rgba(255, 250, 243, 0.98) 0%, rgba(247, 239, 228, 0.98) 100%);
+      box-shadow: 0 28px 70px rgba(40, 28, 18, 0.24);
+      animation: modalIn 220ms ease;
+    }
+
+    .modal-content {
+      padding: 28px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .modal-kicker {
+      color: var(--accent);
+      font-size: 0.88rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .help-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .help-card {
+      border: 1px solid rgba(76, 53, 30, 0.12);
+      border-radius: 20px;
+      background: rgba(255,255,255,0.76);
+      padding: 16px 18px;
+      box-shadow: 0 12px 28px rgba(72, 50, 27, 0.08);
+    }
+
+    .help-card h3 {
+      margin-bottom: 8px;
+      font-size: 1rem;
+    }
+
+    .help-card p {
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid rgba(76, 53, 30, 0.12);
+      background: rgba(255,255,255,0.92);
+      color: var(--text);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+    }
+
+    .modal-close:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(72, 50, 27, 0.12);
+    }
+
+    .modal-close:active {
+      transform: scale(0.97);
+    }
+
+    .room-anchors {
+      position: fixed;
+      left: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 70;
+      display: none;
+      gap: 12px;
+    }
+
+    .room-anchor {
+      min-width: 42px;
+      min-height: 36px;
+      padding: 8px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(76, 53, 30, 0.12);
+      background: rgba(255, 250, 243, 0.54);
+      color: rgba(45, 34, 24, 0.72);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.76rem;
+      line-height: 1;
+      box-shadow: 0 8px 18px rgba(72, 50, 27, 0.08);
+      backdrop-filter: blur(6px);
+      transition: background 140ms ease, color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+    }
+
+    .room-anchor.is-empty {
+      background: rgba(161, 155, 149, 0.62);
+      color: rgba(33, 33, 33, 0.78);
+    }
+
+    .room-anchor.is-full {
+      background: rgba(111, 173, 130, 0.78);
+      color: rgba(17, 47, 24, 0.92);
+    }
+
+    .room-anchor.is-overfull {
+      background: rgba(210, 106, 98, 0.82);
+      color: rgba(88, 18, 18, 0.94);
+    }
+
+    .room-anchor:hover {
+      background: rgba(255, 250, 243, 0.72);
+      color: rgba(45, 34, 24, 0.92);
+      transform: translateX(1px);
+    }
+
+    .mobile-pool-backdrop[hidden],
+    .mobile-pool-toggle[hidden] {
+      display: none;
+    }
+
+    .mobile-pool-backdrop,
+    .mobile-pool-toggle {
+      display: none;
+    }
+
+    .mobile-drag-ghost {
+      position: fixed;
+      left: 0;
+      top: 0;
+      z-index: 120;
+      min-width: 132px;
+      max-width: 220px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(76, 53, 30, 0.12);
+      background: rgba(255,255,255,0.97);
+      box-shadow: 0 18px 38px rgba(40, 28, 18, 0.22);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      transform: translate3d(-9999px, -9999px, 0);
+    }
+
+    .mobile-drag-ghost .swatch {
+      width: 12px;
+      height: 12px;
+    }
+
+    .mobile-drag-ghost .name {
+      font-size: 0.9rem;
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: translateY(-4px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    @keyframes matchPulse {
+      0% { box-shadow: 0 0 0 0 rgba(204,92,45,0.22), 0 10px 20px rgba(70, 48, 26, 0.08); }
+      100% { box-shadow: 0 0 0 3px rgba(204,92,45,0.18), 0 10px 20px rgba(70, 48, 26, 0.08); }
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes modalIn {
+      from { opacity: 0; transform: translateY(8px) scale(0.98); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .layout.collapsed .sidebar {
+      display: flex;
+    }
+
+    .layout.collapsed .sidebar #pool,
+    .layout.collapsed .sidebar .stats,
+    .layout.collapsed .sidebar .search-wrap,
+    .layout.collapsed .sidebar #uploadBtn,
+    .layout.collapsed .sidebar #openJsonBtn,
+    .layout.collapsed .sidebar #langToggleBtn,
+    .layout.collapsed .sidebar #helpBtn {
+      display: none;
+    }
+
+    @media (max-width: 1080px) {
+      .layout { grid-template-columns: 1fr; }
+      .rooms { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .sidebar {
+        position: static;
+        top: auto;
+        height: auto;
+        overflow: visible;
+      }
+    }
+
+      @media (max-width: 720px) {
+      .app { width: min(100vw - 16px, 100%); margin-top: 8px; }
+      body {
+        padding-bottom: 84px;
+      }
+      .panel { padding: 14px; }
+      .rooms { grid-template-columns: 1fr; }
+      .controls { grid-template-columns: 1fr auto; }
+      .rooms-toolbar { grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 8px; }
+      .layout {
+        gap: 0;
+      }
+      .room-anchors {
+        display: grid;
+        left: 4px;
+        gap: 10px;
+      }
+      .room-anchor {
+        min-width: 38px;
+        min-height: 32px;
+        padding: 7px 6px;
+        font-size: 0.72rem;
+        background: rgba(231, 219, 204, 0.52);
+      }
+      .pool {
+        min-height: 0;
+        height: 100%;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .layout.collapsed {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: 72px;
+        top: auto;
+        height: min(72vh, 640px);
+        max-height: min(72vh, 640px);
+        z-index: 90;
+        border-radius: 24px;
+        border-color: rgba(58, 40, 25, 0.22);
+        background:
+          radial-gradient(circle at top left, rgba(189, 138, 78, 0.18), transparent 34%),
+          linear-gradient(180deg, rgba(231, 219, 204, 0.98) 0%, rgba(219, 204, 187, 0.98) 100%);
+        box-shadow: 0 28px 60px rgba(40, 28, 18, 0.24);
+        transform: translateY(calc(100% + 24px));
+        opacity: 0;
+        pointer-events: none;
+        transition: transform 220ms ease, opacity 180ms ease;
+        overflow: hidden;
+      }
+      .sidebar-toolbar {
+        background: transparent;
+        box-shadow: none;
+      }
+      body.mobile-pool-open .sidebar {
+        transform: translateY(0);
+        opacity: 1;
+        pointer-events: auto;
+      }
+      body.mobile-pool-open.mobile-pool-dragging .sidebar {
+        transform: translateY(calc(100% + 24px));
+        opacity: 0;
+        pointer-events: none;
+      }
+      .layout.collapsed .sidebar {
+        width: auto;
+        min-width: 0;
+        height: min(72vh, 640px);
+        padding: 14px;
+        overflow: hidden;
+      }
+      .layout.collapsed .sidebar > .stack {
+        grid-template-rows: auto minmax(0, 1fr);
+        height: 100%;
+      }
+      .layout.collapsed .sidebar .sidebar-toolbar {
+        gap: 10px;
+        padding: 2px 0 6px;
+        background: transparent;
+        box-shadow: none;
+      }
+      .layout.collapsed .sidebar .sidebar-header {
+        justify-content: flex-end;
+        min-height: 44px;
+      }
+      .layout.collapsed .sidebar #pool,
+      .layout.collapsed .sidebar .search-wrap,
+      .layout.collapsed .sidebar #uploadBtn,
+      .layout.collapsed .sidebar #langToggleBtn,
+      .layout.collapsed .sidebar #helpBtn {
+        display: grid;
+      }
+      .layout.collapsed .sidebar #pool {
+        display: block;
+      }
+      .mobile-pool-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        background: rgba(45, 34, 24, 0.34);
+        backdrop-filter: blur(6px);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease;
+      }
+      body.mobile-pool-open .mobile-pool-backdrop {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      body.mobile-pool-open.mobile-pool-dragging .mobile-pool-backdrop {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .mobile-pool-toggle {
+        position: fixed;
+        left: 8px;
+        right: 8px;
+        bottom: 10px;
+        z-index: 95;
+        height: 52px;
+        border-radius: 18px;
+        border: 1px solid rgba(58, 40, 25, 0.22);
+        background:
+          linear-gradient(180deg, rgba(197, 176, 154, 0.98) 0%, rgba(176, 154, 132, 0.98) 100%);
+        color: #2a1f16;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 20px 44px rgba(46, 32, 20, 0.22);
+        font-weight: 700;
+        letter-spacing: 0.01em;
+      }
+      body.mobile-pool-open .mobile-pool-toggle {
+        background:
+          linear-gradient(180deg, rgba(183, 161, 139, 0.98) 0%, rgba(164, 142, 121, 0.98) 100%);
+      }
+      body.mobile-pool-dragging .mobile-pool-toggle {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .help-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+  </style>
+</head>
+  <body>
+    <div class="app">
+      <section class="layout">
+          <aside class="panel stack sidebar">
+            <div class="stack">
+              <div class="sidebar-toolbar">
+                <div class="sidebar-file-row">
+                  <button id="openJsonBtnTop" class="upload-button" type="button" aria-label="Open JSON file">РћС‚РєСЂС‹С‚СЊ</button>
+                </div>
+                <div class="sidebar-header">
+                  <button id="uploadBtn" class="upload-button" type="button">Загрузить</button>
+                  <button id="openJsonBtn" class="upload-button" type="button" aria-label="Open JSON file">Открыть</button><button id="langToggleBtn" class="lang-button" type="button" aria-label="Change language">EN/RU</button>
+                  <button id="helpBtn" class="help-button" type="button" aria-label="Открыть справку">?</button>
+                  <button id="togglePoolBtn" class="toggle-button" type="button" aria-label="Скрыть пул игроков">‹</button>
+                </div>
+                <div class="search-wrap">
+                  <span class="search-icon" aria-hidden="true">⌕</span>
+                  <input id="poolSearchInput" class="search-input" type="text" placeholder="Поиск в пуле">
+                <button id="poolSearchClear" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
+              </div>
+            </div>
+            <div id="pool" class="pool"></div>
+            <input id="uploadInput" type="file" accept=".xlsx,.xls,.csv" hidden>
+          </div>
+
+        </aside>
+
+        <main class="panel stack main-panel">
+          <div class="rooms-toolbar">
+            <h2>Комнаты</h2>
+            <div class="search-wrap">
+              <span class="search-icon" aria-hidden="true">⌕</span>
+              <input id="searchInput" class="search-input" type="text" placeholder="Поиск игрока">
+              <button id="searchClear" class="search-clear" type="button" aria-label="Очистить поиск" hidden>×</button>
+            </div>
+            <button id="copyAllRoomsBtn" class="copy-button" type="button" aria-label="Копировать все комнаты">⧉</button>
+          </div>
+          <div id="rooms" class="rooms"></div>
+        </main>
+    </section>
+  </div>
+
+  <div id="roomAnchors" class="room-anchors" aria-label="Навигация по комнатам"></div>
+  <div id="mobilePoolBackdrop" class="mobile-pool-backdrop" hidden></div>
+  <button id="mobilePoolToggle" class="mobile-pool-toggle" type="button" hidden>Пул игроков</button>
+
+  <div id="helpModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-help></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+      <button id="helpCloseBtn" class="modal-close" type="button" aria-label="Закрыть справку">×</button>
+      <div class="modal-content">
+        <div class="modal-kicker">Справка</div>
+        <h2 id="helpTitle">Как пользоваться</h2>
+        <div class="help-grid">
+          <section class="help-card">
+            <h3>Назначение</h3>
+            <p>Приложение предназначено для распределения игроков по 12 комнатам, быстрой корректировки составов, поиска, импорта списков и выгрузки результата в текст или изображение. Все изменения сохраняются автоматически и восстанавливаются при следующем открытии файла.</p>
+          </section>
+          <section class="help-card">
+            <h3>Структура экрана</h3>
+            <p>На десктопе слева расположен пул свободных игроков, справа комнаты. У пула есть поиск, кнопка загрузки, кнопка справки и кнопка скрытия. У блока комнат есть отдельный поиск, кнопка копирования всех комнат и кнопка красивого снимка. На мобильных пул открывается отдельным нижним модальным окном по кнопке <strong>Пул игроков</strong>.</p>
+          </section>
+          <section class="help-card">
+            <h3>Работа с игроками</h3>
+            <p>Игроков можно перетаскивать из пула в комнаты, между комнатами и обратно в пул. Если перетащить игрока на другого игрока внутри комнаты, они поменяются местами. Кнопка <strong>↩</strong> на карточке в комнате сразу возвращает игрока в пул.</p>
+          </section>
+          <section class="help-card">
+            <h3>Быстрые действия мышью</h3>
+            <p>Двойной клик по карточке игрока в пуле автоматически отправляет его в ближайшую по порядку комнату. Двойной клик по игроку в комнате возвращает его обратно в пул. Во время перетаскивания работает автопрокрутка страницы, а внутри пула отдельно работает внутренний автоскролл.</p>
+          </section>
+          <section class="help-card">
+            <h3>Редактирование игрока</h3>
+            <p>Нажмите <strong>✎</strong> на карточке, чтобы открыть редактирование. В режиме редактирования можно изменить имя игрока и выбрать один из 7 стандартных цветов. Сохранение выполняется кнопкой <strong>✓</strong> или клавишей <strong>Enter</strong>. Пустое имя сохранить нельзя. Пока карточка редактируется, быстрые действия по двойному клику и drag для неё отключаются.</p>
+          </section>
+          <section class="help-card">
+            <h3>Быстрый перенос по списку</h3>
+            <p>Рядом с кнопкой редактирования в карточке есть выпадающий список комнат. Если выбрать в нём номер комнаты, игрок сразу переносится в выбранную комнату. Это работает и для игроков в пуле, и для игроков, уже находящихся в комнатах.</p>
+          </section>
+          <section class="help-card">
+            <h3>Поиск</h3>
+            <p>Поиск по комнатам и поиск по пулу работают независимо. Совпадения подсвечиваются прямо в имени игрока. Поддерживается поиск по похожему вводу латиницей и кириллицей. При вводе интерфейс автоматически прокручивается к первому совпадению. Крестик <strong>×</strong> очищает поиск, а <strong>Esc</strong> очищает активное поле.</p>
+          </section>
+          <section class="help-card">
+            <h3>Комнаты и заполненность</h3>
+            <p>У каждой комнаты есть визуальное состояние: пустая, частично заполненная, почти полная и полная. В счётчике отображается количество игроков в формате <strong>текущее/8</strong>. Если игроков меньше 8, текущее число становится красным. Переполнение тоже разрешено: игроки могут переноситься в уже заполненные комнаты, и счётчик может стать, например, <strong>9/8</strong> или больше.</p>
+          </section>
+          <section class="help-card">
+            <h3>Якоря комнат</h3>
+            <p>В мобильной версии слева отображаются фиксированные якоря комнат: <strong>1-1</strong>, <strong>1-2</strong> и так далее. Нажатие на якорь прокручивает страницу к нужной комнате. Цвет якоря показывает состояние комнаты: пустая — серый, полная — зелёный, переполненная — красный.</p>
+          </section>
+          <section class="help-card">
+            <h3>Импорт из Excel и CSV</h3>
+            <p>Кнопка <strong>Загрузить</strong> открывает выбор файла. Обрабатывается первый лист и первая колонка. Если имя уже существует, игрок сохраняется без изменений. Если имени нет, создаётся новый игрок в пуле. Если в текущем приложении есть игроки, которых нет в загруженном файле, они удаляются полностью, включая удаление из комнат. Новые импортированные игроки получают оранжевый цвет по умолчанию.</p>
+          </section>
+          <section class="help-card">
+            <h3>Копирование состава</h3>
+            <p>Кнопка <strong>⧉</strong> в верхней панели копирует все комнаты сразу. Кнопка <strong>⧉</strong> внутри комнаты копирует только состав этой комнаты. При копировании имена автоматически преобразуются в формат <strong>@ник</strong> без пробелов. После копирования кнопка и соответствующий блок кратко подсвечиваются. На мобильных используется усиленный fallback для буфера обмена.</p>
+          </section>
+          <section class="help-card">
+            <h3>Красивый снимок</h3>
+            <p>Кнопка <strong>✦</strong> создаёт аккуратный PNG-снимок блока комнат. В экспортном режиме из снимка убираются служебные элементы интерфейса: поиск, кнопки в карточках, выпадающие списки и лишние управляющие элементы. В заголовках комнат на снимке остаются только номера комнат без слова <strong>Комната</strong>.</p>
+          </section>
+          <section class="help-card">
+            <h3>Пул на мобильных</h3>
+            <p>На телефоне пул открывается нижней кнопкой <strong>Пул игроков</strong>. Внутри окна работает отдельный скролл. Чтобы начать перенос игрока, нужно не просто провести пальцем, а коротко удержать карточку. После успешного удержания приложение даёт лёгкий вибро-отклик, окно пула уходит с экрана, а под пальцем появляется карточка-призрак. Комната под пальцем подсвечивается заметнее, чтобы было проще отпустить игрока в нужное место.</p>
+          </section>
+          <section class="help-card">
+            <h3>Скрытие пула и сохранение</h3>
+            <p>На десктопе кнопка <strong>‹</strong> сворачивает пул игроков, а <strong>›</strong> возвращает его обратно. При скрытии пула область комнат расширяется. Все действия сохраняются автоматически: переносы, перестановки, редактирование имени, смена цвета, импорт из файла и переполненные комнаты. При повторном открытии страницы приложение восстанавливает последнее сохранённое состояние.</p>
+          </section>
+          <section class="help-card">
+            <h3>Горячие клавиши</h3>
+            <p><strong>Enter</strong> сохраняет имя игрока в режиме редактирования. <strong>Esc</strong> закрывает окно справки или очищает активное поле поиска. Остальные действия выполняются мышью или касанием: drag-and-drop, двойной клик, кнопки на карточках и выпадающий список комнат.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="jsonPromptModal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-json-prompt></div>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="jsonPromptTitle">
+      <div class="modal-content json-start-card">
+        <h2 id="jsonPromptTitle">Выберите файл настроек</h2>
+        <p id="jsonPromptText">Чтобы автосохранение работало, выберите существующий файл или создайте новый.</p>
+        <div class="json-start-actions">
+          <button id="jsonPromptChooseBtn" class="upload-button" type="button">Выбрать файл</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore-compat.js"></script>
+  <script>
+    const STATE_KEY = "room-planner-state";
+    const UI_LANG_KEY = "room-planner-ui-lang";
+    const JSON_HANDLE_DB = "room-planner-json-handle-db";
+    const JSON_HANDLE_STORE = "handles";
+    const JSON_HANDLE_KEY = "current";
+    const SERVER_STATE_URL = "./room-planner-state.json";
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyA1P5WLIj7HDxhaUuKN0obHRbdlu7f7N8g",
+      authDomain: "diablo-2e4f8.firebaseapp.com",
+      projectId: "diablo-2e4f8",
+      storageBucket: "diablo-2e4f8.firebasestorage.app",
+      messagingSenderId: "796388399478",
+      appId: "1:796388399478:web:77db9298b82665b43d8257"
+    };
+    const firebaseApp = window.firebase?.apps?.length
+      ? window.firebase.app()
+      : window.firebase?.initializeApp?.(FIREBASE_CONFIG) || null;
+    const firestoreDb = firebaseApp ? window.firebase.firestore() : null;
+    const remoteStateDoc = firestoreDb ? firestoreDb.collection("shared").doc("roomPlanner") : null;
+
+    function readStoredState() {
+      try {
+        const raw = localStorage.getItem(STATE_KEY);
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    }
+
+    function writeStoredState(state) {
+      localStorage.setItem(STATE_KEY, JSON.stringify(state));
+    }
+
+    function readStoredLang() {
+      try {
+        const raw = localStorage.getItem(UI_LANG_KEY);
+        return raw === "en" ? "en" : "ru";
+      } catch {
+        return "ru";
+      }
+    }
+
+    function writeStoredLang(lang) {
+      localStorage.setItem(UI_LANG_KEY, lang);
+    }
+
+    function openJsonHandleDb() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(JSON_HANDLE_DB, 1);
+        request.onerror = () => reject(request.error);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          if (!db.objectStoreNames.contains(JSON_HANDLE_STORE)) {
+            db.createObjectStore(JSON_HANDLE_STORE);
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+      });
+    }
+
+    async function savePersistedJsonHandle(handle) {
+      if (!handle || !("indexedDB" in window)) return;
+      const db = await openJsonHandleDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(JSON_HANDLE_STORE, "readwrite");
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("IndexedDB write failed"));
+        tx.objectStore(JSON_HANDLE_STORE).put(handle, JSON_HANDLE_KEY);
+      });
+      db.close();
+    }
+
+    async function loadPersistedJsonHandle() {
+      if (!("indexedDB" in window)) return null;
+      const db = await openJsonHandleDb();
+      const handle = await new Promise((resolve, reject) => {
+        const tx = db.transaction(JSON_HANDLE_STORE, "readonly");
+        const request = tx.objectStore(JSON_HANDLE_STORE).get(JSON_HANDLE_KEY);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      });
+      db.close();
+      return handle;
+    }
+
+    async function clearPersistedJsonHandle() {
+      if (!("indexedDB" in window)) return;
+      const db = await openJsonHandleDb();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(JSON_HANDLE_STORE, "readwrite");
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error("IndexedDB delete failed"));
+        tx.objectStore(JSON_HANDLE_STORE).delete(JSON_HANDLE_KEY);
+      });
+      db.close();
+    }
+
+    const ROOM_CAPACITY = 8;
+    const ROOM_IDS = Array.from({ length: 12 }, (_, index) => `${Math.floor(index / 3) + 1}-${(index % 3) + 1}`);
+    const CHANNEL_NAME = "room-planner-local-sync";
+    const DEFAULT_PLAYER_COLOR = "#E4572E";
+    const MOBILE_DRAG_HOLD_MS = 240;
+    const MOBILE_DRAG_MOVE_TOLERANCE = 10;
+    const COLOR_OPTIONS = [
+      { value: "#E4572E", key: "color_red" },
+      { value: "#F3A712", key: "color_yellow" },
+      { value: "#2E86AB", key: "color_blue" },
+      { value: "#2A9D8F", key: "color_teal" },
+      { value: "#6A4C93", key: "color_purple" },
+      { value: "#5B8C5A", key: "color_green" },
+      { value: "#4D3B2F", key: "color_brown" }
+    ];
+    const CYR_TO_LAT = {
+      а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh", з: "z", и: "i", й: "y",
+      к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f",
+      х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya"
+    };
+    const LAT_TO_CYR_RULES = [
+      ["sch", "щ"], ["sh", "ш"], ["ch", "ч"], ["yo", "ё"], ["yu", "ю"], ["ya", "я"], ["zh", "ж"], ["ts", "ц"],
+      ["a", "а"], ["b", "б"], ["v", "в"], ["g", "г"], ["d", "д"], ["e", "е"], ["z", "з"], ["i", "и"], ["y", "й"],
+      ["k", "к"], ["l", "л"], ["m", "м"], ["n", "н"], ["o", "о"], ["p", "п"], ["r", "р"], ["s", "с"], ["t", "т"],
+      ["u", "у"], ["f", "ф"], ["h", "х"]
+    ];
+    const UI_TEXT = {
+      ru: {
+        upload: "Загрузить",
+        openHelp: "Открыть справку",
+        closeHelp: "Закрыть справку",
+        hidePool: "Скрыть пул игроков",
+        showPool: "Показать пул игроков",
+        poolSearch: "Поиск в пуле",
+        roomSearch: "Поиск игрока",
+        clearSearch: "Очистить поиск",
+        rooms: "Комнаты",
+        roomNav: "Навигация по комнатам",
+        mobilePool: "Пул игроков",
+        copyAllRooms: "Копировать все комнаты",
+        copyRoom: "Копировать состав комнаты",
+        cleanSnapshot: "Сделать красивый снимок комнат",
+        roomLabel: (roomId) => `Комната ${roomId}`,
+        roomCopyLabel: (roomId) => `Комната ${roomId}`,
+        emptyPool: "Свободных игроков пока нет.",
+        dropHere: "Перетащите сюда игрока",
+        save: "Сохранить",
+        edit: "Редактировать",
+        moveToPool: "Переместить в пул",
+        moveToRoom: "Переместить в комнату",
+        chooseColor: "Выбрать цвет",
+        color_red: "Красный",
+        color_yellow: "Жёлтый",
+        color_blue: "Синий",
+        color_teal: "Бирюзовый",
+        color_purple: "Фиолетовый",
+        color_green: "Зелёный",
+        color_brown: "Коричневый",
+        emptyName: "Пустой ник запрещён.",
+        playerMissing: "Игрок уже не существует.",
+        playerDeleted: "Игрок уже удалён.",
+        playerAlreadyThere: "Игрок уже там.",
+        reorderFailed: "Не удалось изменить порядок игроков.",
+        operationCanceled: "Операция отменена.",
+        saveFailed: "Не удалось сохранить изменения.",
+        excelLoaderFailed: "Не удалось загрузить обработчик Excel.",
+        noSheets: "Файл не содержит листов.",
+        copyFailed: "Не удалось скопировать в буфер обмена.",
+        snapshotFailed: "Не удалось загрузить инструмент снимка.",
+        snapshotTitle: "Комнаты",
+        langButton: "EN/RU",
+        helpKicker: "Справка",
+        helpTitle: "Как пользоваться",
+        helpSections: [
+          ["Назначение", "Приложение предназначено для распределения игроков по 12 комнатам, быстрой корректировки составов, поиска, импорта списков и выгрузки результата в текст или изображение. Все изменения сохраняются автоматически и восстанавливаются при следующем открытии файла."],
+          ["Структура экрана", "На десктопе слева расположен пул свободных игроков, справа комнаты. У пула есть поиск, кнопка загрузки, кнопка справки и кнопка скрытия. У блока комнат есть отдельный поиск, кнопка копирования всех комнат и кнопка красивого снимка. На мобильных пул открывается отдельным нижним модальным окном по кнопке Пул игроков."],
+          ["Работа с игроками", "Игроков можно перетаскивать из пула в комнаты, между комнатами и обратно в пул. Если перетащить игрока на другого игрока внутри комнаты, они поменяются местами. Кнопка ↩ на карточке в комнате сразу возвращает игрока в пул."],
+          ["Быстрые действия", "Двойной клик по карточке игрока в пуле автоматически отправляет его в ближайшую по порядку комнату. Двойной клик по игроку в комнате возвращает его обратно в пул. Во время перетаскивания работает автопрокрутка страницы, а внутри пула отдельно работает внутренний автоскролл."],
+          ["Редактирование игрока", "Нажмите ✎ на карточке, чтобы открыть редактирование. В режиме редактирования можно изменить имя игрока и выбрать один из 7 стандартных цветов. Сохранение выполняется кнопкой ✓ или клавишей Enter. Пустое имя сохранить нельзя. Пока карточка редактируется, быстрые действия по двойному клику и drag для неё отключаются."],
+          ["Быстрый перенос по списку", "Рядом с кнопкой редактирования в карточке есть выпадающий список комнат. Если выбрать в нём номер комнаты, игрок сразу переносится в выбранную комнату. Это работает и для игроков в пуле, и для игроков, уже находящихся в комнатах."],
+          ["Поиск", "Поиск по комнатам и поиск по пулу работают независимо. Совпадения подсвечиваются прямо в имени игрока. Поддерживается поиск по похожему вводу латиницей и кириллицей. При вводе интерфейс автоматически прокручивается к первому совпадению. Крестик × очищает поиск, а Esc очищает активное поле."],
+          ["Комнаты и заполненность", "У каждой комнаты есть визуальное состояние: пустая, частично заполненная, почти полная и полная. В счётчике отображается количество игроков в формате текущее/8. Если игроков меньше 8, текущее число становится красным. Переполнение тоже разрешено: игроки могут переноситься в уже заполненные комнаты, и счётчик может стать, например, 9/8 или больше."],
+          ["Якоря комнат", "В мобильной версии слева отображаются фиксированные якоря комнат: 1-1, 1-2 и так далее. Нажатие на якорь прокручивает страницу к нужной комнате. Цвет якоря показывает состояние комнаты: пустая — серый, полная — зелёный, переполненная — красный."],
+          ["Импорт из Excel и CSV", "Кнопка Загрузить открывает выбор файла. Обрабатывается первый лист и первая колонка. Если имя уже существует, игрок сохраняется без изменений. Если имени нет, создаётся новый игрок в пуле. Если в текущем приложении есть игроки, которых нет в загруженном файле, они удаляются полностью, включая удаление из комнат. Новые импортированные игроки получают оранжевый цвет по умолчанию."],
+          ["Копирование состава", "Кнопка ⧉ в верхней панели копирует все комнаты сразу. Кнопка ⧉ внутри комнаты копирует только состав этой комнаты. При копировании имена автоматически преобразуются в формат @ник без пробелов. После копирования кнопка и соответствующий блок кратко подсвечиваются. На мобильных используется усиленный fallback для буфера обмена."],
+          ["Красивый снимок", "Кнопка ✦ создаёт аккуратный PNG-снимок блока комнат. В экспортном режиме из снимка убираются служебные элементы интерфейса: поиск, кнопки в карточках, выпадающие списки и лишние управляющие элементы. В заголовках комнат на снимке остаются только номера комнат без слова Комната."],
+          ["Пул на мобильных", "На телефоне пул открывается нижней кнопкой Пул игроков. Внутри окна работает отдельный скролл. Чтобы начать перенос игрока, нужно не просто провести пальцем, а коротко удержать карточку. После успешного удержания приложение даёт лёгкий вибро-отклик, окно пула уходит с экрана, а под пальцем появляется карточка-призрак. Комната под пальцем подсвечивается заметнее, чтобы было проще отпустить игрока в нужное место."],
+          ["Скрытие пула и сохранение", "На десктопе кнопка ‹ сворачивает пул игроков, а › возвращает его обратно. При скрытии пула область комнат расширяется. Все действия сохраняются автоматически: переносы, перестановки, редактирование имени, смена цвета, импорт из файла и переполненные комнаты. При повторном открытии страницы приложение восстанавливает последнее сохранённое состояние."],
+          ["Горячие клавиши", "Enter сохраняет имя игрока в режиме редактирования. Esc закрывает окно справки или очищает активное поле поиска. Остальные действия выполняются мышью или касанием: drag-and-drop, двойной клик, кнопки на карточках и выпадающий список комнат."]
+        ]
+      },
+      en: {
+        upload: "Upload",
+        openHelp: "Open help",
+        closeHelp: "Close help",
+        hidePool: "Hide player pool",
+        showPool: "Show player pool",
+        poolSearch: "Search in pool",
+        roomSearch: "Search player",
+        clearSearch: "Clear search",
+        rooms: "Rooms",
+        roomNav: "Room navigation",
+        mobilePool: "Player pool",
+        copyAllRooms: "Copy all rooms",
+        copyRoom: "Copy room roster",
+        cleanSnapshot: "Create clean room snapshot",
+        roomLabel: (roomId) => `Room ${roomId}`,
+        roomCopyLabel: (roomId) => `Room ${roomId}`,
+        emptyPool: "No free players yet.",
+        dropHere: "Drop a player here",
+        save: "Save",
+        edit: "Edit",
+        moveToPool: "Move to pool",
+        moveToRoom: "Move to room",
+        chooseColor: "Choose color",
+        color_red: "Red",
+        color_yellow: "Yellow",
+        color_blue: "Blue",
+        color_teal: "Teal",
+        color_purple: "Purple",
+        color_green: "Green",
+        color_brown: "Brown",
+        emptyName: "Empty nickname is not allowed.",
+        playerMissing: "Player no longer exists.",
+        playerDeleted: "Player has already been deleted.",
+        playerAlreadyThere: "Player is already there.",
+        reorderFailed: "Could not reorder players.",
+        operationCanceled: "Operation cancelled.",
+        saveFailed: "Could not save changes.",
+        excelLoaderFailed: "Could not load the Excel handler.",
+        noSheets: "The file does not contain sheets.",
+        copyFailed: "Could not copy to clipboard.",
+        snapshotFailed: "Could not load the snapshot tool.",
+        snapshotTitle: "Rooms",
+        langButton: "EN/RU",
+        helpKicker: "Help",
+        helpTitle: "How to use",
+        helpSections: [
+          ["Purpose", "This app is designed for assigning players to 12 rooms, quickly adjusting rosters, searching, importing lists, and exporting the result as text or an image. All changes are saved automatically and restored the next time the file is opened."],
+          ["Screen layout", "On desktop, the free player pool is on the left and the rooms are on the right. The pool has its own search, upload button, help button, and hide button. The rooms area has its own search, a copy-all button, and a clean snapshot button. On mobile, the pool opens as a bottom modal by pressing Player pool."],
+          ["Working with players", "Players can be dragged from the pool into rooms, between rooms, and back into the pool. Dropping one player onto another inside a room swaps them. The ↩ button on a room card immediately sends the player back to the pool."],
+          ["Quick actions", "Double-clicking a player card in the pool sends that player to the next room in order. Double-clicking a player inside a room returns them to the pool. While dragging, page auto-scroll works, and the pool has its own internal auto-scroll."],
+          ["Editing a player", "Press ✎ on a card to open editing. In edit mode you can change the player name and choose one of 7 standard colors. Save with ✓ or Enter. Empty names are not allowed. While a card is being edited, double-click shortcuts and dragging are disabled for that card."],
+          ["Quick move from the dropdown", "Next to the edit button on each card there is a room dropdown. Selecting a room number moves the player there immediately. This works both for players in the pool and for players already inside rooms."],
+          ["Search", "Room search and pool search work independently. Matches are highlighted directly inside the player name. Search also supports approximate latin/cyrillic input. When you type, the interface scrolls to the first match. The × button clears search, and Esc clears the active field."],
+          ["Rooms and occupancy", "Each room has a visual occupancy state: empty, partially filled, nearly full, and full. The counter shows current/8. If there are fewer than 8 players, the current number turns red. Overflow is also allowed: players can be moved into already full rooms, so the counter may become 9/8 or more."],
+          ["Room anchors", "On mobile, fixed room anchors appear on the left: 1-1, 1-2, and so on. Tapping an anchor scrolls the page to that room. The anchor color shows room status: empty is gray, full is green, overfilled is red."],
+          ["Import from Excel and CSV", "The Upload button opens a file picker. The app reads the first sheet and the first column. If a name already exists, that player stays unchanged. If a name does not exist, a new player is created in the pool. If the app currently contains players that are missing from the imported file, they are removed entirely, including from rooms. New imported players get orange as the default color."],
+          ["Copying rosters", "The ⧉ button in the top toolbar copies all rooms at once. The ⧉ button inside a room copies only that room. When copied, names are automatically converted to the @nickname format without spaces. After copying, the button and the corresponding block briefly highlight. On mobile, a stronger clipboard fallback is used."],
+          ["Clean snapshot", "The ✦ button creates a clean PNG snapshot of the rooms area. In export mode the app removes service UI elements such as search, card buttons, dropdowns, and extra controls. Room headers on the snapshot keep only the room number without the word Room."],
+          ["Pool on mobile", "On phones, the pool opens from the bottom Player pool button. The pool has its own internal scroll. To start dragging a player, do not just swipe; hold the card briefly. Once the hold becomes a real drag, the app gives a light vibration, the pool moves off-screen, and a ghost card appears under your finger. The room under your finger is highlighted more strongly to make dropping easier."],
+          ["Hiding the pool and saving", "On desktop, the ‹ button hides the pool and › brings it back. When the pool is hidden, the rooms area expands. All actions are saved automatically: moves between rooms, reordering, name edits, color changes, file imports, and overfilled rooms. When the page is reopened, the last saved state is restored."],
+          ["Hotkeys", "Enter saves the player name while editing. Esc closes the help window or clears the active search field. Most other actions are performed with mouse or touch: drag-and-drop, double-click, card buttons, and the room dropdown."]
+        ]
+      }
+    };
+    const el = {
+      layout: document.querySelector(".layout"),
+      pool: document.getElementById("pool"),
+      rooms: document.getElementById("rooms"),
+      togglePoolBtn: document.getElementById("togglePoolBtn"),
+      uploadBtn: document.getElementById("uploadBtn"),
+      openJsonBtn: document.getElementById("openJsonBtnTop") || document.getElementById("openJsonBtn"),
+      langToggleBtn: document.getElementById("langToggleBtn"),
+      helpBtn: document.getElementById("helpBtn"),
+      uploadInput: document.getElementById("uploadInput"),
+      searchInput: document.getElementById("searchInput"),
+      roomsTitle: document.querySelector(".rooms-toolbar h2"),
+      copyAllRoomsBtn: document.getElementById("copyAllRoomsBtn"),
+      searchClear: document.getElementById("searchClear"),
+      poolSearchInput: document.getElementById("poolSearchInput"),
+      poolSearchClear: document.getElementById("poolSearchClear"),
+      helpModal: document.getElementById("helpModal"),
+      helpCloseBtn: document.getElementById("helpCloseBtn"),
+      jsonPromptModal: document.getElementById("jsonPromptModal"),
+      jsonPromptTitle: document.getElementById("jsonPromptTitle"),
+      jsonPromptText: document.getElementById("jsonPromptText"),
+      jsonPromptChooseBtn: document.getElementById("jsonPromptChooseBtn"),
+      roomAnchors: document.getElementById("roomAnchors"),
+      mobilePoolBackdrop: document.getElementById("mobilePoolBackdrop"),
+      mobilePoolToggle: document.getElementById("mobilePoolToggle")
+    };
+
+    const prettySnapshotBtn = document.createElement("button");
+    prettySnapshotBtn.id = "prettySnapshotBtn";
+    prettySnapshotBtn.className = "copy-button";
+    prettySnapshotBtn.type = "button";
+    prettySnapshotBtn.setAttribute("aria-label", "Сделать красивый снимок комнат");
+    prettySnapshotBtn.textContent = "✦";
+    el.copyAllRoomsBtn.before(prettySnapshotBtn);
+    el.prettySnapshotBtn = prettySnapshotBtn;
+
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel(CHANNEL_NAME) : null;
+    const state = {
+      app: loadInitialState(),
+      dragPlayerId: null,
+      touchHold: null,
+      touchDrag: null,
+      dragWindowScrollY: 0,
+      dragPoolScrollY: 0,
+      dragScrollFrame: null,
+      expandedEditors: new Set(),
+      openColorPickers: new Set(),
+      poolCollapsed: false,
+      jsonFileHandle: null,
+      jsonWriteChain: Promise.resolve(),
+      jsonPromptDismissed: false,
+      remoteReady: false,
+      remoteUnsubscribe: null,
+      lang: readStoredLang(),
+      searchQuery: "",
+      poolSearchQuery: "",
+      syncing: false
+    };
+
+    if (isMobileView()) {
+      state.poolCollapsed = true;
+    }
+
+    el.togglePoolBtn.addEventListener("click", () => {
+      state.poolCollapsed = !state.poolCollapsed;
+      render();
+    });
+    el.langToggleBtn.addEventListener("click", async () => {
+      state.lang = state.lang === "ru" ? "en" : "ru";
+      try {
+        await persistAll();
+      } catch (error) {
+        handleError(error);
+      }
+      render();
+    });
+    el.mobilePoolToggle.addEventListener("click", () => {
+      state.poolCollapsed = !state.poolCollapsed;
+      render();
+    });
+    el.mobilePoolBackdrop.addEventListener("click", () => {
+      clearScheduledTouchPoolDrag();
+      if (!state.poolCollapsed) {
+        state.poolCollapsed = true;
+        render();
+      }
+    });
+    el.helpBtn.addEventListener("click", openHelpModal);
+    el.uploadBtn.addEventListener("click", () => {
+      el.uploadInput.click();
+    });
+    el.helpCloseBtn.addEventListener("click", closeHelpModal);
+    el.helpModal.addEventListener("click", (event) => {
+      if (event.target instanceof HTMLElement && event.target.hasAttribute("data-close-help")) {
+        closeHelpModal();
+      }
+    });
+    el.jsonPromptModal.addEventListener("click", (event) => {
+      if (event.target instanceof HTMLElement && event.target.hasAttribute("data-close-json-prompt")) {
+        closeJsonPromptModal();
+      }
+    });
+    el.jsonPromptChooseBtn.addEventListener("click", () => {
+      chooseJsonFile()
+        .then(() => {
+          if (state.jsonFileHandle) {
+            closeJsonPromptModal();
+          }
+        })
+        .catch(handleError);
+    });
+    el.uploadInput.addEventListener("change", async () => {
+      const [file] = el.uploadInput.files || [];
+      if (!file) return;
+      try {
+        await importPlayersFromFile(file);
+      } catch (error) {
+        handleError(error);
+      } finally {
+        el.uploadInput.value = "";
+      }
+    });
+    el.copyAllRoomsBtn.addEventListener("click", () => {
+      copyTextToClipboard(formatAllRooms()).then(() => {
+        flashCopied(el.copyAllRoomsBtn);
+        flashContainer(document.querySelector(".main-panel"));
+      }).catch(handleError);
+    });
+    el.prettySnapshotBtn.addEventListener("click", () => {
+      captureRoomsSnapshot({ pretty: true }).catch(handleError);
+    });
+    bindSearchField(el.searchInput, el.searchClear, "searchQuery", scrollToFirstMatch);
+    bindSearchField(el.poolSearchInput, el.poolSearchClear, "poolSearchQuery", scrollToFirstPoolMatch);
+    window.addEventListener("dragover", handleWindowDragOver);
+    window.addEventListener("drop", stopAutoScroll);
+    window.addEventListener("dragend", stopAutoScroll);
+    window.matchMedia("(max-width: 720px)").addEventListener("change", (event) => {
+      clearScheduledTouchPoolDrag();
+      cancelTouchPoolDrag();
+      if (event.matches) {
+        state.poolCollapsed = true;
+      }
+      document.body.classList.remove("mobile-pool-open");
+      render();
+    });
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !el.helpModal.hidden) {
+        event.preventDefault();
+        closeHelpModal();
+        return;
+      }
+      if (event.key === "Escape" && !el.jsonPromptModal.hidden) {
+        event.preventDefault();
+        closeJsonPromptModal();
+      }
+    });
+
+    if (channel) {
+      channel.addEventListener("message", (event) => {
+        if (event.data?.type !== "state-updated") return;
+          refreshFromStorage();
+      });
+    }
+
+    window.addEventListener("storage", (event) => {
+      if (event.key === STATE_KEY) {
+          refreshFromStorage();
+      }
+    });
+
+    render();
+    bootstrapRemoteState();
+
+    function loadInitialState() {
+      return normalizeState(readStoredState());
+    }
+
+    async function bootstrapRemoteState() {
+      if (remoteStateDoc) {
+        try {
+          const snapshot = await remoteStateDoc.get();
+          if (!snapshot.exists) {
+            await remoteStateDoc.set({
+              appState: state.app,
+              lang: state.lang,
+              updatedAt: Date.now()
+            });
+          }
+
+          state.remoteReady = true;
+          state.jsonPromptDismissed = true;
+          el.jsonPromptModal.hidden = true;
+
+          if (state.remoteUnsubscribe) {
+            state.remoteUnsubscribe();
+          }
+
+          state.remoteUnsubscribe = remoteStateDoc.onSnapshot((doc) => {
+            const data = doc.data();
+            if (!data) return;
+
+            if (data.appState && typeof data.appState === "object") {
+              state.app = normalizeState(data.appState);
+              writeStoredState(state.app);
+            }
+            if (data.lang === "en" || data.lang === "ru") {
+              state.lang = data.lang;
+              writeStoredLang(state.lang);
+            }
+            render();
+          }, handleError);
+          return;
+        } catch (error) {
+          console.error(error);
+        }
+      }
+
+      const loadedFromServer = await bootstrapServerJsonState();
+      if (loadedFromServer) {
+        return;
+      }
+
+      if (!canUseJsonFileStorage()) {
+        return;
+      }
+
+      try {
+        const persistedHandle = await loadPersistedJsonHandle();
+        if (persistedHandle) {
+          const permission = await persistedHandle.queryPermission({ mode: "readwrite" });
+          if (permission === "granted") {
+            await applyJsonHandle(persistedHandle, { persistHandle: false, saveAfterLoad: false });
+            return;
+          }
+        }
+      } catch (error) {
+        console.error(error);
+      }
+
+      maybeOpenJsonPromptModal();
+    }
+
+    async function bootstrapServerJsonState() {
+      if (!/^https?:$/i.test(window.location.protocol)) {
+        return false;
+      }
+
+      try {
+        const response = await fetch(`${SERVER_STATE_URL}?ts=${Date.now()}`, {
+          cache: "no-store"
+        });
+        if (!response.ok) {
+          return false;
+        }
+
+        const parsed = await response.json();
+        if (parsed?.appState && typeof parsed.appState === "object") {
+          state.app = normalizeState(parsed.appState);
+          writeStoredState(state.app);
+        }
+        if (parsed?.lang === "en" || parsed?.lang === "ru") {
+          state.lang = parsed.lang;
+          writeStoredLang(state.lang);
+        }
+
+        state.jsonPromptDismissed = true;
+        render();
+        return true;
+      } catch (error) {
+        console.error(error);
+        return false;
+      }
+    }
+
+    function maybeOpenJsonPromptModal() {
+      if (remoteStateDoc) {
+        return;
+      }
+      if (state.jsonPromptDismissed || state.jsonFileHandle || !canUseJsonFileStorage()) {
+        return;
+      }
+      el.jsonPromptModal.hidden = false;
+    }
+
+    function normalizeState(raw, forceSeed = false) {
+      const rooms = createDefaultRooms();
+      const players = {};
+      const incomingRooms = raw && typeof raw.rooms === "object" ? raw.rooms : {};
+      const incomingPlayers = raw && typeof raw.players === "object" ? raw.players : {};
+      const updatedAt = typeof raw?.updatedAt === "number" ? raw.updatedAt : Date.now();
+      const shouldSeedDefaults = forceSeed || Object.keys(incomingPlayers).length === 0;
+
+      if (shouldSeedDefaults) {
+        return {
+          rooms,
+          players: createDefaultPlayers(),
+          updatedAt: Date.now()
+        };
+      }
+
+      for (const [playerId, player] of Object.entries(incomingPlayers)) {
+        if (!player || typeof player !== "object") continue;
+        const name = String(player.name || "").trim();
+        if (!name) continue;
+        players[playerId] = {
+          name,
+          color: normalizePaletteColor(player.color, playerId)
+        };
+      }
+
+      for (const roomId of ROOM_IDS) {
+        const list = Array.isArray(incomingRooms[roomId]) ? incomingRooms[roomId] : [];
+        rooms[roomId] = list.filter((playerId) => players[playerId]);
+      }
+
+      return { rooms, players, updatedAt };
+    }
+
+    function createDefaultRooms() {
+      return ROOM_IDS.reduce((acc, roomId) => {
+        acc[roomId] = [];
+        return acc;
+      }, {});
+    }
+
+    function createDefaultPlayers() {
+      const players = {};
+      for (let index = 1; index <= 100; index += 1) {
+        const id = String(index);
+        players[id] = {
+          name: id,
+          color: normalizePaletteColor(null, id)
+        };
+      }
+      return players;
+    }
+
+    function t(key, ...args) {
+      const entry = UI_TEXT[state.lang]?.[key];
+      if (typeof entry === "function") {
+        return entry(...args);
+      }
+      return entry ?? key;
+    }
+
+    function getColorLabel(option) {
+      return t(option.key);
+    }
+
+    function renderLocalizedUI() {
+      document.documentElement.lang = state.lang;
+      el.uploadBtn.textContent = t("upload");
+      el.langToggleBtn.textContent = t("langButton");
+      el.helpBtn.setAttribute("aria-label", t("openHelp"));
+      el.togglePoolBtn.setAttribute("aria-label", state.poolCollapsed ? t("showPool") : t("hidePool"));
+      el.poolSearchInput.placeholder = t("poolSearch");
+      el.poolSearchClear.setAttribute("aria-label", t("clearSearch"));
+      el.roomsTitle.textContent = t("rooms");
+      el.searchInput.placeholder = t("roomSearch");
+      el.searchClear.setAttribute("aria-label", t("clearSearch"));
+      el.copyAllRoomsBtn.setAttribute("aria-label", t("copyAllRooms"));
+      el.mobilePoolToggle.textContent = t("mobilePool");
+      el.roomAnchors.setAttribute("aria-label", t("roomNav"));
+      el.helpCloseBtn.setAttribute("aria-label", t("closeHelp"));
+      el.prettySnapshotBtn.setAttribute("aria-label", t("cleanSnapshot"));
+      el.jsonPromptTitle.textContent = state.lang === "en" ? "Choose a settings file" : "Выберите файл настроек";
+      el.jsonPromptText.textContent = state.lang === "en"
+        ? "To enable autosave, choose an existing file or create a new one."
+        : "Чтобы автосохранение работало, выберите существующий файл или создайте новый.";
+      el.jsonPromptChooseBtn.textContent = state.lang === "en" ? "Choose file" : "Выбрать файл";
+      renderHelpModalContent();
+    }
+
+    function renderHelpModalContent() {
+      const content = el.helpModal.querySelector(".modal-content");
+      content.innerHTML = `
+        <div class="modal-kicker">${escapeHtml(t("helpKicker"))}</div>
+        <h2 id="helpTitle">${escapeHtml(t("helpTitle"))}</h2>
+        <div class="help-grid">
+          ${UI_TEXT[state.lang].helpSections.map(([title, body]) => `
+            <section class="help-card">
+              <h3>${escapeHtml(title)}</h3>
+              <p>${escapeHtml(body)}</p>
+            </section>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    function render() {
+      renderLocalizedUI();
+      el.layout.classList.toggle("collapsed", state.poolCollapsed);
+      el.togglePoolBtn.textContent = state.poolCollapsed ? "›" : "‹";
+      el.togglePoolBtn.setAttribute("aria-label", state.poolCollapsed ? t("showPool") : t("hidePool"));
+      el.searchClear.hidden = !el.searchInput.value;
+      el.poolSearchClear.hidden = !el.poolSearchInput.value;
+      syncMobilePoolUI();
+      buildRoomAnchors();
+      renderPool();
+      renderRooms();
+    }
+
+    function renderPool() {
+      const assigned = new Set(Object.values(state.app.rooms).flat());
+      const freeIds = Object.keys(state.app.players)
+        .filter((playerId) => !assigned.has(playerId));
+
+      el.pool.innerHTML = "";
+      el.pool.ondragover = (event) => {
+        event.preventDefault();
+        el.pool.classList.add("drop-target");
+      };
+      el.pool.ondragleave = () => el.pool.classList.remove("drop-target");
+        el.pool.ondrop = async (event) => {
+          event.preventDefault();
+          el.pool.classList.remove("drop-target");
+          const playerId = event.dataTransfer.getData("text/plain") || state.dragPlayerId;
+          if (!playerId) return;
+          try {
+            await movePlayer(playerId, null, null);
+            } catch (error) {
+              handleError(error);
+          }
+        };
+
+        const cards = document.createElement("div");
+        cards.className = "cards";
+        if (!freeIds.length) {
+          cards.append(emptyNode(t("emptyPool")));
+        } else {
+        for (const playerId of freeIds) {
+          const player = state.app.players[playerId];
+          if (state.poolSearchQuery && !matchesPoolSearch(player)) {
+            continue;
+          }
+          cards.append(playerCard(playerId, null));
+        }
+      }
+      el.pool.append(cards);
+      }
+
+    function renderRooms() {
+      el.rooms.innerHTML = "";
+      for (const roomId of ROOM_IDS) {
+        const room = document.createElement("section");
+        const players = state.app.rooms[roomId];
+        room.className = `room ${roomFillClass(players.length)}`;
+        room.dataset.roomId = roomId;
+        room.id = `room-${roomId}`;
+        room.ondragover = (event) => {
+          event.preventDefault();
+          room.classList.add("drop-target");
+        };
+        room.ondragleave = () => room.classList.remove("drop-target");
+        room.ondrop = async (event) => {
+          event.preventDefault();
+          room.classList.remove("drop-target");
+          const playerId = event.dataTransfer.getData("text/plain") || state.dragPlayerId;
+          if (!playerId) return;
+          try {
+              await movePlayer(playerId, roomId, null);
+            } catch (error) {
+              handleError(error);
+            }
+          };
+
+        const cards = document.createElement("div");
+        cards.className = "cards";
+        if (!players.length) {
+          cards.append(emptyNode(t("dropHere")));
+        } else {
+          players.forEach((playerId) => cards.append(playerCard(playerId, roomId)));
+        }
+
+          room.innerHTML = `
+            <div class="room-top">
+              <div>
+                <div><strong>${t("roomLabel", roomId)}</strong></div>
+              </div>
+              <div class="room-actions">
+                <button class="room-copy-button" type="button" aria-label="${t("copyRoom")}">⧉</button>
+                <div class="pill"><span class="pill-current${players.length > ROOM_CAPACITY ? " overfull" : players.length < ROOM_CAPACITY ? " incomplete" : ""}">${players.length}</span>/${ROOM_CAPACITY}</div>
+              </div>
+            </div>
+          `;
+          const copyRoomButton = room.querySelector(".room-copy-button");
+          copyRoomButton.onclick = () => {
+            copyTextToClipboard(formatSingleRoom(roomId)).then(() => {
+                flashCopied(copyRoomButton);
+                flashContainer(room);
+              }).catch(handleError);
+            };
+          room.append(cards);
+          el.rooms.append(room);
+        }
+    }
+
+    function playerCard(playerId, location) {
+      const player = state.app.players[playerId];
+      const card = document.createElement("article");
+      const activeQuery = location ? state.searchQuery : state.poolSearchQuery;
+      card.className = "player";
+      if (location && matchesSearch(player)) {
+        card.classList.add("match");
+      }
+      if (!location && matchesPoolSearch(player)) {
+        card.classList.add("match");
+      }
+      if (state.expandedEditors.has(playerId)) {
+        card.classList.add("expanded");
+      }
+      card.draggable = !state.expandedEditors.has(playerId);
+      card.dataset.playerId = playerId;
+      card.dataset.playerName = player.name.toLowerCase();
+      card.oncontextmenu = (event) => event.preventDefault();
+      if (!location) {
+        card.addEventListener("touchstart", (event) => {
+          if (!isMobileView()) return;
+          scheduleTouchPoolDrag(event, playerId, player);
+        }, { passive: false });
+        card.addEventListener("touchmove", cancelScheduledTouchPoolDrag, { passive: true });
+        card.addEventListener("touchend", cancelScheduledTouchPoolDrag, { passive: true });
+        card.addEventListener("touchcancel", cancelScheduledTouchPoolDrag, { passive: true });
+      }
+      card.ondragstart = (event) => {
+        state.dragPlayerId = playerId;
+        card.classList.add("dragging");
+        event.dataTransfer.setData("text/plain", playerId);
+        if (!location && isMobileView() && !state.touchDrag) {
+          state.poolCollapsed = true;
+          syncMobilePoolUI();
+        }
+        startAutoScroll();
+      };
+      card.ondragend = () => {
+        state.dragPlayerId = null;
+        card.classList.remove("dragging");
+        document.querySelectorAll(".drop-target").forEach((node) => node.classList.remove("drop-target"));
+        stopAutoScroll();
+      };
+      if (!location) {
+        card.ondblclick = () => {
+          if (state.expandedEditors.has(playerId)) return;
+          const nextRoomId = findNearestAvailableRoom();
+          if (!nextRoomId) {
+            return;
+          }
+          movePlayer(playerId, nextRoomId, null).catch(handleError);
+        };
+      }
+      if (location) {
+        card.ondblclick = () => {
+          if (state.expandedEditors.has(playerId)) return;
+          movePlayer(playerId, null, null).catch(handleError);
+        };
+        card.ondragover = (event) => {
+          event.preventDefault();
+          card.classList.add("drop-target");
+        };
+        card.ondragleave = () => card.classList.remove("drop-target");
+        card.ondrop = async (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          card.classList.remove("drop-target");
+          const draggedPlayerId = event.dataTransfer.getData("text/plain") || state.dragPlayerId;
+          if (!draggedPlayerId || draggedPlayerId === playerId) return;
+          try {
+              await movePlayer(draggedPlayerId, location, playerId);
+            } catch (error) {
+              handleError(error);
+            }
+          };
+      }
+
+      const top = document.createElement("div");
+      top.className = "player-head";
+      top.innerHTML = `
+        <div class="identity">
+          <span class="swatch" style="background:${player.color}"></span>
+          <div>
+            <div class="name">${highlightPlayerName(player.name, activeQuery)}</div>
+          </div>
+        </div>
+        <div class="player-actions">
+          <button class="icon-button" type="button" aria-label="${state.expandedEditors.has(playerId) ? t("save") : t("edit")}">${state.expandedEditors.has(playerId) ? "✓" : "✎"}</button>
+          ${location ? `<button class="icon-button remove-button" type="button" aria-label="${t("moveToPool")}">↩</button>` : ""}
+        </div>
+      `;
+
+      const playerActions = top.querySelector(".player-actions");
+      const roomJump = document.createElement("select");
+      roomJump.className = "room-jump";
+      roomJump.setAttribute("aria-label", t("moveToRoom"));
+      roomJump.innerHTML = `<option value="">→</option>${ROOM_IDS.map((roomId) => `<option value="${roomId}"${location === roomId ? " selected" : ""}>${roomId}</option>`).join("")}`;
+      roomJump.onmousedown = (event) => event.stopPropagation();
+      roomJump.onclick = (event) => event.stopPropagation();
+      roomJump.onchange = () => {
+        if (!roomJump.value || roomJump.value === location) {
+          roomJump.value = location || "";
+          return;
+        }
+        movePlayer(playerId, roomJump.value, null).catch(handleError);
+      };
+      playerActions.prepend(roomJump);
+
+      const toggleButton = top.querySelector(".icon-button");
+      toggleButton.onmousedown = (event) => event.stopPropagation();
+      toggleButton.onclick = () => {
+        if (!state.expandedEditors.has(playerId)) {
+          state.expandedEditors.add(playerId);
+          state.openColorPickers.delete(playerId);
+          render();
+          return;
+        }
+        savePlayerName(playerId, location, nameInput.value);
+      };
+
+      const removeButton = top.querySelector(".remove-button");
+      if (removeButton) {
+        removeButton.onmousedown = (event) => event.stopPropagation();
+        removeButton.onclick = () => {
+            movePlayer(playerId, null, null).catch(handleError);
+          };
+        }
+
+      const controls = document.createElement("div");
+      controls.className = "controls";
+
+      const nameInput = document.createElement("input");
+      nameInput.type = "text";
+      nameInput.value = player.name;
+      nameInput.maxLength = 24;
+      nameInput.onmousedown = (event) => event.stopPropagation();
+      nameInput.ondragstart = (event) => event.preventDefault();
+      nameInput.onkeydown = (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          savePlayerName(playerId, location, nameInput.value);
+        }
+      };
+
+      const colorInput = document.createElement("div");
+      colorInput.className = "color-dropdown";
+      const currentColor = normalizePaletteColor(player.color, playerId);
+      const colorTrigger = document.createElement("button");
+      colorTrigger.type = "button";
+      colorTrigger.className = "color-trigger";
+      colorTrigger.setAttribute("aria-label", t("chooseColor"));
+      colorTrigger.innerHTML = `<span class="color-trigger-dot" style="background:${currentColor}"></span>`;
+      colorTrigger.onclick = () => {
+        if (state.openColorPickers.has(playerId)) {
+          state.openColorPickers.delete(playerId);
+        } else {
+          state.openColorPickers.clear();
+          state.openColorPickers.add(playerId);
+        }
+        render();
+      };
+
+      const colorMenu = document.createElement("div");
+      colorMenu.className = "color-menu";
+      colorMenu.hidden = !state.openColorPickers.has(playerId);
+      for (const colorOption of COLOR_OPTIONS) {
+        const colorButton = document.createElement("button");
+        colorButton.type = "button";
+        colorButton.className = `color-dot${colorOption.value === currentColor ? " active" : ""}`;
+        colorButton.style.background = colorOption.value;
+        colorButton.title = getColorLabel(colorOption);
+        colorButton.setAttribute("aria-label", getColorLabel(colorOption));
+        colorButton.onclick = () => {
+          state.openColorPickers.delete(playerId);
+          updatePlayer(playerId, { color: colorOption.value }, location).catch(handleError);
+        };
+        colorMenu.append(colorButton);
+      }
+
+      colorInput.append(colorTrigger, colorMenu);
+
+      controls.append(nameInput, colorInput);
+      card.append(top, controls);
+      return card;
+    }
+
+    function emptyNode(text) {
+      const node = document.createElement("div");
+      node.className = "empty";
+      node.textContent = text;
+      return node;
+    }
+
+    function savePlayerName(playerId, location, name) {
+      const nextName = String(name || "").trim();
+      if (!nextName) {
+        handleError(new Error(t("emptyName")));
+        return;
+      }
+      updatePlayer(playerId, { name: nextName }, location)
+        .then(() => {
+          state.expandedEditors.delete(playerId);
+          state.openColorPickers.delete(playerId);
+          render();
+        })
+        .catch(handleError);
+    }
+
+    async function updatePlayer(playerId, patch, location) {
+      await mutate((draft) => {
+        const current = draft.players[playerId];
+        if (!current) throw new Error(t("playerMissing"));
+        const next = { ...current, ...patch };
+        next.name = String(next.name || "").trim();
+        if (!next.name) throw new Error(t("emptyName"));
+        next.color = normalizePaletteColor(next.color, playerId);
+        draft.players[playerId] = next;
+        return {
+          nextState: draft
+        };
+      });
+    }
+
+    async function movePlayer(playerId, targetRoomId, targetPlayerId) {
+      await mutate((draft) => {
+        if (!draft.players[playerId]) throw new Error(t("playerDeleted"));
+        const previousRoomId = findRoomOf(draft.rooms, playerId);
+        if (previousRoomId === targetRoomId && !targetPlayerId) throw new Error(t("playerAlreadyThere"));
+        const movingWithinSameRoom = previousRoomId && previousRoomId === targetRoomId && targetPlayerId;
+        if (movingWithinSameRoom) {
+          const room = [...(draft.rooms[targetRoomId] || [])];
+          const draggedIndex = room.indexOf(playerId);
+          const targetIndex = room.indexOf(targetPlayerId);
+          if (draggedIndex === -1 || targetIndex === -1) throw new Error(t("reorderFailed"));
+          [room[draggedIndex], room[targetIndex]] = [room[targetIndex], room[draggedIndex]];
+          draft.rooms[targetRoomId] = room;
+          return {
+            nextState: draft
+          };
+        }
+
+        if (previousRoomId) {
+          draft.rooms[previousRoomId] = draft.rooms[previousRoomId].filter((id) => id !== playerId);
+        }
+        if (targetRoomId) {
+          const room = [...(draft.rooms[targetRoomId] || [])];
+          if (targetPlayerId && room.includes(targetPlayerId)) {
+            const targetIndex = room.indexOf(targetPlayerId);
+            room.splice(targetIndex, 0, playerId);
+          } else {
+            room.push(playerId);
+          }
+          draft.rooms[targetRoomId] = room;
+        }
+        return {
+          nextState: draft
+        };
+      });
+    }
+
+    async function mutate(mutator) {
+      state.syncing = true;
+      render();
+      let failure = "";
+
+      try {
+        const draft = normalizeState(clone(state.app));
+        const outcome = mutator(draft);
+        if (!outcome?.nextState) throw new Error(t("operationCanceled"));
+
+        state.app = normalizeState({ ...outcome.nextState, updatedAt: Date.now() });
+        await persistAll();
+      } catch (error) {
+        failure = error.message || t("saveFailed");
+      } finally {
+        state.syncing = false;
+        render();
+      }
+
+      if (failure) {
+        throw new Error(failure);
+      }
+    }
+
+    async function importPlayersFromFile(file) {
+      if (typeof XLSX === "undefined") {
+        throw new Error(t("excelLoaderFailed"));
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) {
+        throw new Error(t("noSheets"));
+      }
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+      const incomingNames = [];
+      const seen = new Set();
+      for (const row of rows) {
+        const value = String(row?.[0] ?? "").trim();
+        if (!value || seen.has(value)) continue;
+        seen.add(value);
+        incomingNames.push(value);
+      }
+
+      await mutate((draft) => {
+        const existingByName = new Map();
+        for (const [playerId, player] of Object.entries(draft.players)) {
+          existingByName.set(player.name, { playerId, player });
+        }
+
+        const allowedPlayerIds = new Set();
+        for (const name of incomingNames) {
+          const existing = existingByName.get(name);
+          if (existing) {
+            allowedPlayerIds.add(existing.playerId);
+            continue;
+          }
+
+          let playerId = name;
+          let suffix = 2;
+          while (draft.players[playerId]) {
+            playerId = `${name}-${suffix}`;
+            suffix += 1;
+          }
+          draft.players[playerId] = {
+            name,
+            color: DEFAULT_PLAYER_COLOR
+          };
+          allowedPlayerIds.add(playerId);
+        }
+
+        for (const playerId of Object.keys(draft.players)) {
+          if (!allowedPlayerIds.has(playerId)) {
+            delete draft.players[playerId];
+          }
+        }
+
+        for (const roomId of ROOM_IDS) {
+          draft.rooms[roomId] = (draft.rooms[roomId] || []).filter((playerId) => allowedPlayerIds.has(playerId));
+        }
+
+        return { nextState: draft };
+      });
+    }
+
+    async function persistAll() {
+      writeStoredState(state.app);
+      writeStoredLang(state.lang);
+      if (remoteStateDoc) {
+        await remoteStateDoc.set({
+          appState: state.app,
+          lang: state.lang,
+          updatedAt: Date.now()
+        });
+        return;
+      }
+      await persistJsonFile();
+      if (channel) {
+        channel.postMessage({ type: "state-updated" });
+      }
+    }
+
+    function canUseJsonFileStorage() {
+      return typeof window.showSaveFilePicker === "function";
+    }
+
+    function jsonErrorMessage(type) {
+      const messages = {
+        unsupported: state.lang === "en"
+          ? "This browser does not support saving to a JSON file."
+          : "Этот браузер не поддерживает запись в JSON-файл.",
+        access: state.lang === "en"
+          ? "Could not access the JSON file."
+          : "Не удалось получить доступ к JSON-файлу.",
+        invalid: state.lang === "en"
+          ? "The JSON file contains invalid data."
+          : "JSON-файл содержит некорректные данные.",
+        write: state.lang === "en"
+          ? "Failed to save changes to the JSON file."
+          : "Не удалось сохранить изменения в JSON-файл."
+      };
+      return messages[type] || messages.write;
+    }
+
+    function serializePersistentPayload() {
+      return JSON.stringify({
+        appState: state.app,
+        lang: state.lang,
+        savedAt: Date.now()
+      }, null, 2);
+    }
+
+    async function applyJsonHandle(handle, options = {}) {
+      const { persistHandle = true, saveAfterLoad = true } = options;
+      const permission = await handle.requestPermission({ mode: "readwrite" });
+      if (permission !== "granted") {
+        throw new Error(jsonErrorMessage("access"));
+      }
+
+      state.jsonFileHandle = handle;
+      if (persistHandle) {
+        await savePersistedJsonHandle(handle);
+      }
+
+      try {
+        const file = await handle.getFile();
+        const text = await file.text();
+        if (text.trim()) {
+          const parsed = JSON.parse(text);
+          if (parsed?.appState && typeof parsed.appState === "object") {
+            state.app = normalizeState(parsed.appState);
+          }
+          if (parsed?.lang === "en" || parsed?.lang === "ru") {
+            state.lang = parsed.lang;
+          }
+        }
+      } catch (error) {
+        if (error?.name !== "NotFoundError") {
+          throw new Error(jsonErrorMessage("invalid"));
+        }
+      }
+
+      render();
+      closeJsonPromptModal();
+      if (saveAfterLoad) {
+        await persistAll();
+      }
+    }
+
+    async function openJsonFile() {
+      if (!canUseJsonFileStorage() || typeof window.showOpenFilePicker !== "function") {
+        throw new Error(jsonErrorMessage("unsupported"));
+      }
+
+      let handles;
+      try {
+        handles = await window.showOpenFilePicker({
+          multiple: false,
+          types: [{
+            description: "JSON",
+            accept: { "application/json": [".json"] }
+          }]
+        });
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        throw error;
+      }
+
+      const [handle] = handles || [];
+      if (!handle) return;
+      await applyJsonHandle(handle);
+    }
+
+    async function bindJsonFile() {
+      if (!canUseJsonFileStorage()) {
+        throw new Error(jsonErrorMessage("unsupported"));
+      }
+
+      let handle;
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: "room-planner-state.json",
+          types: [{
+            description: "JSON",
+            accept: { "application/json": [".json"] }
+          }]
+        });
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        throw error;
+      }
+
+      await applyJsonHandle(handle);
+    }
+
+    async function chooseJsonFile() {
+      if (!canUseJsonFileStorage()) {
+        throw new Error(jsonErrorMessage("unsupported"));
+      }
+
+      if (typeof window.showOpenFilePicker === "function") {
+        try {
+          await openJsonFile();
+          return;
+        } catch (error) {
+          if (error?.name !== "AbortError") {
+            throw error;
+          }
+        }
+      }
+
+      await bindJsonFile();
+    }
+
+    function closeJsonPromptModal() {
+      state.jsonPromptDismissed = true;
+      el.jsonPromptModal.hidden = true;
+    }
+
+    async function persistJsonFile() {
+      if (!state.jsonFileHandle) return;
+
+      const permission = await state.jsonFileHandle.queryPermission({ mode: "readwrite" });
+      if (permission !== "granted") {
+        const requested = await state.jsonFileHandle.requestPermission({ mode: "readwrite" });
+        if (requested !== "granted") {
+          state.jsonFileHandle = null;
+          await clearPersistedJsonHandle();
+          throw new Error(jsonErrorMessage("access"));
+        }
+      }
+
+      state.jsonWriteChain = state.jsonWriteChain.then(async () => {
+        const writable = await state.jsonFileHandle.createWritable();
+        await writable.write(serializePersistentPayload());
+        await writable.close();
+      });
+
+      try {
+        await state.jsonWriteChain;
+      } catch {
+        state.jsonFileHandle = null;
+        state.jsonWriteChain = Promise.resolve();
+        await clearPersistedJsonHandle();
+        throw new Error(jsonErrorMessage("write"));
+      }
+    }
+
+    function refreshFromStorage() {
+      const stored = normalizeState(readStoredState());
+      if (stored.updatedAt <= state.app.updatedAt) return;
+      state.app = stored;
+      render();
+    }
+
+    function buildRoomAnchors() {
+      if (!el.roomAnchors) return;
+      el.roomAnchors.innerHTML = "";
+      for (const roomId of ROOM_IDS) {
+        const playerCount = (state.app.rooms[roomId] || []).length;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `room-anchor${playerCount === 0 ? " is-empty" : playerCount > ROOM_CAPACITY ? " is-overfull" : playerCount >= ROOM_CAPACITY ? " is-full" : ""}`;
+        button.textContent = roomId;
+        button.setAttribute("aria-label", `${t("roomLabel", roomId)}`);
+        button.addEventListener("click", () => {
+          const room = document.getElementById(`room-${roomId}`);
+          if (!room) return;
+          room.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        el.roomAnchors.append(button);
+      }
+    }
+
+    function openHelpModal() {
+      el.helpModal.hidden = false;
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeHelpModal() {
+      el.helpModal.hidden = true;
+      document.body.style.overflow = "";
+    }
+
+    function isMobileView() {
+      return window.matchMedia("(max-width: 720px)").matches;
+    }
+
+    function syncMobilePoolUI() {
+      const mobile = isMobileView();
+      el.mobilePoolToggle.hidden = !mobile;
+      el.mobilePoolBackdrop.hidden = !mobile;
+      document.body.classList.toggle("mobile-pool-open", mobile && !state.poolCollapsed);
+    }
+
+    function scheduleTouchPoolDrag(event, playerId, player) {
+      if (!isMobileView() || !event.touches?.length || state.touchDrag) return;
+      const touch = event.touches[0];
+      clearScheduledTouchPoolDrag();
+      state.touchHold = {
+        playerId,
+        player,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        timer: setTimeout(() => {
+          const syntheticEvent = {
+            touches: [{ clientX: state.touchHold.startX, clientY: state.touchHold.startY }],
+            preventDefault() {}
+          };
+          clearScheduledTouchPoolDrag();
+          startTouchPoolDrag(syntheticEvent, playerId, player);
+        }, MOBILE_DRAG_HOLD_MS)
+      };
+    }
+
+    function cancelScheduledTouchPoolDrag(event) {
+      if (!state.touchHold) return;
+      if (event?.touches?.length) {
+        const touch = event.touches[0];
+        const movedX = Math.abs(touch.clientX - state.touchHold.startX);
+        const movedY = Math.abs(touch.clientY - state.touchHold.startY);
+        if (movedX <= MOBILE_DRAG_MOVE_TOLERANCE && movedY <= MOBILE_DRAG_MOVE_TOLERANCE) {
+          return;
+        }
+      }
+      clearScheduledTouchPoolDrag();
+    }
+
+    function clearScheduledTouchPoolDrag() {
+      if (!state.touchHold) return;
+      clearTimeout(state.touchHold.timer);
+      state.touchHold = null;
+    }
+
+    function startTouchPoolDrag(event, playerId, player) {
+      if (!isMobileView() || !event.touches?.length) return;
+      event.preventDefault();
+      const touch = event.touches[0];
+      clearDropTargets();
+      state.poolCollapsed = true;
+      state.dragPlayerId = playerId;
+      state.touchDrag = {
+        playerId,
+        targetRoomId: null,
+        targetPlayerId: null,
+        ghost: createTouchDragGhost(player),
+        offsetX: 26,
+        offsetY: 26
+      };
+      document.body.append(state.touchDrag.ghost);
+      updateTouchGhostPosition(touch.clientX, touch.clientY);
+      document.body.classList.add("mobile-pool-dragging");
+      triggerTouchDragHaptic();
+      window.addEventListener("touchmove", handleTouchPoolDragMove, { passive: false });
+      window.addEventListener("touchend", handleTouchPoolDragEnd, { passive: false });
+      window.addEventListener("touchcancel", cancelTouchPoolDrag, { passive: false });
+    }
+
+    function handleTouchPoolDragMove(event) {
+      if (!state.touchDrag || !event.touches?.length) return;
+      event.preventDefault();
+      const touch = event.touches[0];
+      updateTouchGhostPosition(touch.clientX, touch.clientY);
+      updateTouchDragTarget(touch.clientX, touch.clientY);
+      autoScrollTouchWindow(touch.clientY);
+    }
+
+    function handleTouchPoolDragEnd(event) {
+      clearScheduledTouchPoolDrag();
+      if (!state.touchDrag) return;
+      event.preventDefault();
+      const { playerId, targetRoomId, targetPlayerId } = state.touchDrag;
+      cleanupTouchPoolDrag();
+      if (targetRoomId) {
+        movePlayer(playerId, targetRoomId, targetPlayerId).catch(handleError);
+      } else {
+        render();
+      }
+    }
+
+    function cancelTouchPoolDrag(event) {
+      clearScheduledTouchPoolDrag();
+      if (!state.touchDrag) return;
+      if (event) {
+        event.preventDefault();
+      }
+      cleanupTouchPoolDrag();
+      render();
+    }
+
+    function cleanupTouchPoolDrag() {
+      if (state.touchDrag?.ghost) {
+        state.touchDrag.ghost.remove();
+      }
+      document.body.classList.remove("mobile-pool-dragging");
+      state.touchDrag = null;
+      state.dragPlayerId = null;
+      clearDropTargets();
+      window.removeEventListener("touchmove", handleTouchPoolDragMove);
+      window.removeEventListener("touchend", handleTouchPoolDragEnd);
+      window.removeEventListener("touchcancel", cancelTouchPoolDrag);
+    }
+
+    function createTouchDragGhost(player) {
+      const ghost = document.createElement("div");
+      ghost.className = "mobile-drag-ghost";
+      ghost.innerHTML = `
+        <span class="swatch" style="background:${player.color}"></span>
+        <span class="name">${escapeHtml(player.name)}</span>
+      `;
+      return ghost;
+    }
+
+    function updateTouchGhostPosition(clientX, clientY) {
+      if (!state.touchDrag?.ghost) return;
+      const x = clientX - state.touchDrag.offsetX;
+      const y = clientY - state.touchDrag.offsetY;
+      state.touchDrag.ghost.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    }
+
+    function updateTouchDragTarget(clientX, clientY) {
+      if (!state.touchDrag) return;
+      clearDropTargets();
+      state.touchDrag.targetRoomId = null;
+      state.touchDrag.targetPlayerId = null;
+
+      const target = document.elementFromPoint(clientX, clientY);
+      if (!(target instanceof HTMLElement)) return;
+
+      const targetCard = target.closest(".room .player");
+      if (targetCard instanceof HTMLElement) {
+        const room = targetCard.closest(".room");
+        if (room instanceof HTMLElement) {
+          room.classList.add("touch-drop-target");
+          targetCard.classList.add("touch-drop-target");
+          state.touchDrag.targetRoomId = room.dataset.roomId || null;
+          state.touchDrag.targetPlayerId = targetCard.dataset.playerId || null;
+          return;
+        }
+      }
+
+      const targetRoom = target.closest(".room");
+      if (targetRoom instanceof HTMLElement) {
+        targetRoom.classList.add("touch-drop-target");
+        state.touchDrag.targetRoomId = targetRoom.dataset.roomId || null;
+      }
+    }
+
+    function autoScrollTouchWindow(clientY) {
+      const speed = getAutoScrollSpeed(clientY, 0, window.innerHeight, 84, 18);
+      if (speed !== 0) {
+        window.scrollBy(0, speed);
+      }
+    }
+
+    function clearDropTargets() {
+      document.querySelectorAll(".drop-target").forEach((node) => node.classList.remove("drop-target"));
+      document.querySelectorAll(".touch-drop-target").forEach((node) => node.classList.remove("touch-drop-target"));
+    }
+
+    function triggerTouchDragHaptic() {
+      try {
+        if (typeof navigator.vibrate === "function") {
+          navigator.vibrate(16);
+        }
+      } catch {
+        // Ignore unsupported vibration APIs.
+      }
+    }
+
+    function handleError(error) {
+      console.error(error);
+    }
+
+    function bindSearchField(input, clearButton, stateKey, scrollFn) {
+      input.addEventListener("input", () => {
+        state[stateKey] = normalizeSearchText(input.value);
+        clearButton.hidden = !input.value;
+        render();
+        scrollFn();
+      });
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          clearSearchField(input, clearButton, stateKey);
+        }
+      });
+      clearButton.addEventListener("click", () => {
+        clearSearchField(input, clearButton, stateKey);
+        input.focus();
+      });
+    }
+
+    function clearSearchField(input, clearButton, stateKey) {
+      input.value = "";
+      state[stateKey] = "";
+      clearButton.hidden = true;
+      render();
+    }
+
+    function handleWindowDragOver(event) {
+      if (!state.dragPlayerId) return;
+      const poolRect = el.pool.getBoundingClientRect();
+      const pointerInsidePool = !state.poolCollapsed
+        && event.clientX >= poolRect.left
+        && event.clientX <= poolRect.right
+        && event.clientY >= poolRect.top
+        && event.clientY <= poolRect.bottom;
+
+      if (pointerInsidePool) {
+        state.dragPoolScrollY = getAutoScrollSpeed(event.clientY, poolRect.top, poolRect.bottom, 64, 18);
+        const atPoolTop = el.pool.scrollTop <= 0;
+        const atPoolBottom = el.pool.scrollTop + el.pool.clientHeight >= el.pool.scrollHeight - 1;
+        if ((state.dragPoolScrollY < 0 && !atPoolTop) || (state.dragPoolScrollY > 0 && !atPoolBottom)) {
+          state.dragWindowScrollY = 0;
+        } else {
+          state.dragWindowScrollY = getAutoScrollSpeed(event.clientY, 0, window.innerHeight, 96, 22);
+        }
+      } else {
+        state.dragPoolScrollY = 0;
+        state.dragWindowScrollY = getAutoScrollSpeed(event.clientY, 0, window.innerHeight, 96, 22);
+      }
+    }
+
+    function startAutoScroll() {
+      if (state.dragScrollFrame) return;
+      const tick = () => {
+        if (!state.dragPlayerId) {
+          state.dragScrollFrame = null;
+          return;
+        }
+        if (state.dragPoolScrollY !== 0) {
+          el.pool.scrollTop += state.dragPoolScrollY;
+        }
+        if (state.dragWindowScrollY !== 0) {
+          window.scrollBy(0, state.dragWindowScrollY);
+        }
+        state.dragScrollFrame = requestAnimationFrame(tick);
+      };
+      state.dragScrollFrame = requestAnimationFrame(tick);
+    }
+
+    function stopAutoScroll() {
+      state.dragWindowScrollY = 0;
+      state.dragPoolScrollY = 0;
+      if (state.dragScrollFrame) {
+        cancelAnimationFrame(state.dragScrollFrame);
+        state.dragScrollFrame = null;
+      }
+    }
+
+    function getAutoScrollSpeed(pointerY, top, bottom, threshold, maxSpeed) {
+      if (pointerY < top + threshold) {
+        return -Math.ceil((((top + threshold) - pointerY) / threshold) * maxSpeed);
+      }
+      if (pointerY > bottom - threshold) {
+        return Math.ceil(((pointerY - (bottom - threshold)) / threshold) * maxSpeed);
+      }
+      return 0;
+    }
+
+    function matchesSearch(player) {
+      if (!state.searchQuery) return false;
+      const variants = buildSearchVariants(player.name);
+      return variants.some((value) => value.includes(state.searchQuery));
+    }
+
+    function matchesPoolSearch(player) {
+      if (!state.poolSearchQuery) return false;
+      const variants = buildSearchVariants(player.name);
+      return variants.some((value) => value.includes(state.poolSearchQuery));
+    }
+
+    function scrollToFirstMatch() {
+      if (!state.searchQuery) return;
+      const firstMatch = document.querySelector('.room .player.match');
+      if (!firstMatch) return;
+      firstMatch.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function scrollToFirstPoolMatch() {
+      if (!state.poolSearchQuery) return;
+      const firstMatch = document.querySelector('.pool .player.match');
+      if (!firstMatch) return;
+      firstMatch.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function formatSingleRoom(roomId) {
+      const players = state.app.rooms[roomId] || [];
+      const lines = [t("roomCopyLabel", roomId)];
+      for (const playerId of players) {
+        lines.push(formatCopiedNickname(state.app.players[playerId]?.name || playerId));
+      }
+      return lines.join("\n");
+    }
+
+    function formatAllRooms() {
+      return ROOM_IDS.map((roomId) => formatSingleRoom(roomId)).join("\n");
+    }
+
+    async function copyTextToClipboard(text) {
+      const payload = String(text || "");
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(payload);
+          return;
+        } catch {
+          // Fall back for mobile browsers / file:// contexts where Clipboard API is blocked.
+        }
+      }
+
+      const textarea = document.createElement("textarea");
+      textarea.value = payload;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      textarea.style.top = "0";
+      textarea.style.opacity = "0.01";
+      textarea.style.fontSize = "16px";
+      textarea.style.pointerEvents = "none";
+      textarea.style.contain = "strict";
+      document.body.append(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const copied = document.execCommand("copy");
+      textarea.remove();
+      if (!copied) {
+        throw new Error(t("copyFailed"));
+      }
+    }
+
+    async function captureRoomsSnapshot(options = {}) {
+      if (typeof html2canvas !== "function") {
+        throw new Error(t("snapshotFailed"));
+      }
+
+      const { pretty = false } = options;
+      const target = document.querySelector(".main-panel");
+      const targetRect = target.getBoundingClientRect();
+      const cloneHost = document.createElement("div");
+      cloneHost.style.position = "fixed";
+      cloneHost.style.left = "-10000px";
+      cloneHost.style.top = "0";
+      cloneHost.style.width = `${Math.ceil(targetRect.width)}px`;
+      cloneHost.style.padding = "0";
+      cloneHost.style.margin = "0";
+      cloneHost.style.background = "#fdf8f1";
+      cloneHost.style.zIndex = "-1";
+
+      const clone = target.cloneNode(true);
+      clone.style.width = `${Math.ceil(targetRect.width)}px`;
+      clone.style.minHeight = "auto";
+      clone.style.height = "auto";
+      clone.style.paddingLeft = "18px";
+      clone.querySelectorAll(".rooms-toolbar").forEach((node) => {
+        node.style.position = "static";
+        node.style.top = "auto";
+        if (pretty) {
+          const title = document.createElement("div");
+          title.style.fontSize = "28px";
+          title.style.fontWeight = "700";
+          title.style.lineHeight = "1.1";
+          title.style.marginBottom = "10px";
+          title.textContent = t("snapshotTitle");
+          node.replaceWith(title);
+        }
+      });
+      clone.querySelectorAll(".rooms").forEach((node) => {
+        node.style.display = "grid";
+        node.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
+        node.style.gap = "14px";
+      });
+      clone.querySelectorAll(".room").forEach((node) => {
+        node.style.breakInside = "avoid";
+      });
+      if (pretty) {
+        clone.style.paddingTop = "22px";
+        clone.style.paddingRight = "20px";
+        clone.style.paddingBottom = "20px";
+        clone.querySelectorAll(".room-copy-button, .copy-button, .search-wrap, .search-clear, .search-icon").forEach((node) => {
+          node.remove();
+        });
+        clone.querySelectorAll(".room").forEach((node) => {
+          const roomId = node.dataset.roomId;
+          const title = node.querySelector(".room-top strong");
+          if (title && roomId) {
+            title.textContent = roomId;
+          }
+        });
+        clone.querySelectorAll(".player-actions, .swatch").forEach((node) => {
+          node.remove();
+        });
+        clone.querySelectorAll(".player-head").forEach((node) => {
+          node.style.justifyContent = "flex-start";
+        });
+      }
+
+      cloneHost.append(clone);
+      document.body.append(cloneHost);
+
+      const canvas = await html2canvas(clone, {
+        backgroundColor: "#fdf8f1",
+        scale: Math.min(window.devicePixelRatio || 1, 2),
+        useCORS: true,
+        width: Math.ceil(targetRect.width),
+        windowWidth: Math.ceil(targetRect.width)
+      });
+      cloneHost.remove();
+
+      const link = document.createElement("a");
+      const stamp = new Date().toISOString().replaceAll(":", "-").slice(0, 19);
+      link.download = pretty ? `rooms-clean-snapshot-${stamp}.png` : `rooms-snapshot-${stamp}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+
+      flashCopied(el.prettySnapshotBtn);
+      flashContainer(target);
+    }
+
+    function flashCopied(button) {
+      button.classList.add("copied");
+      clearTimeout(button._copiedTimer);
+      button._copiedTimer = setTimeout(() => {
+        button.classList.remove("copied");
+      }, 220);
+    }
+
+    function flashContainer(element) {
+      if (!element) return;
+      element.classList.remove("flash-copy");
+      void element.offsetWidth;
+      element.classList.add("flash-copy");
+      clearTimeout(element._flashTimer);
+      element._flashTimer = setTimeout(() => {
+        element.classList.remove("flash-copy");
+      }, 260);
+    }
+
+    function findRoomOf(rooms, playerId) {
+      for (const [roomId, players] of Object.entries(rooms)) {
+        if (players.includes(playerId)) return roomId;
+      }
+      return null;
+    }
+
+    function findNearestAvailableRoom() {
+      for (const roomId of ROOM_IDS) {
+        const players = state.app.rooms[roomId] || [];
+        if (players.length < ROOM_CAPACITY) {
+          return roomId;
+        }
+      }
+      return null;
+    }
+
+    function roomFillClass(playerCount) {
+      if (playerCount === 0) return "room-empty";
+      if (playerCount > ROOM_CAPACITY) return "room-nearfull";
+      if (playerCount >= ROOM_CAPACITY) return "room-full";
+      if (playerCount >= ROOM_CAPACITY - 2) return "room-nearfull";
+      return "room-partial";
+    }
+
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+
+    function isHex(value) {
+      return /^#[0-9a-f]{6}$/i.test(String(value || ""));
+    }
+
+    function normalizePaletteColor(value, seed = "") {
+      const normalized = String(value || "").toUpperCase();
+      const match = COLOR_OPTIONS.find((option) => option.value.toUpperCase() === normalized);
+      if (match) return match.value;
+      return COLOR_OPTIONS[colorIndexFromSeed(seed)].value;
+    }
+
+    function colorIndexFromSeed(seed) {
+      const text = String(seed || "");
+      let hash = 0;
+      for (let index = 0; index < text.length; index += 1) {
+        hash = text.charCodeAt(index) + ((hash << 5) - hash);
+      }
+      return Math.abs(hash) % COLOR_OPTIONS.length;
+    }
+
+    function normalizePlayerNickname(value) {
+      const compact = String(value || "").replace(/\s+/g, "").trim();
+      if (!compact) return "";
+      return compact.startsWith("@") ? compact : `@${compact}`;
+    }
+
+    function formatCopiedNickname(value) {
+      return normalizePlayerNickname(value);
+    }
+
+    function normalizeSearchText(text) {
+      return String(text || "").toLowerCase().trim();
+    }
+
+    function buildSearchVariants(text) {
+      const normalized = normalizeSearchText(text);
+      const translitLat = toLatin(normalized);
+      const translitCyr = toCyrillic(normalized);
+      return [normalized, translitLat, translitCyr];
+    }
+
+    function highlightPlayerName(name, query) {
+      const safeName = escapeHtml(name);
+      const normalizedQuery = normalizeSearchText(query);
+      if (!normalizedQuery) {
+        return safeName;
+      }
+
+      const lowerName = String(name).toLowerCase();
+      const directIndex = lowerName.indexOf(normalizedQuery);
+      if (directIndex !== -1) {
+        const start = escapeHtml(name.slice(0, directIndex));
+        const middle = escapeHtml(name.slice(directIndex, directIndex + normalizedQuery.length));
+        const end = escapeHtml(name.slice(directIndex + normalizedQuery.length));
+        return `${start}<mark>${middle}</mark>${end}`;
+      }
+
+      const translitLat = toLatin(lowerName);
+      const translitCyr = toCyrillic(lowerName);
+      if (translitLat.includes(normalizedQuery) || translitCyr.includes(normalizedQuery)) {
+        return `<mark>${safeName}</mark>`;
+      }
+
+      return safeName;
+    }
+
+    function toLatin(text) {
+      return [...text].map((char) => CYR_TO_LAT[char] ?? char).join("");
+    }
+
+    function toCyrillic(text) {
+      let result = text;
+      for (const [latin, cyr] of LAT_TO_CYR_RULES) {
+        result = result.replaceAll(latin, cyr);
+      }
+      return result;
+    }
+
+    function colorFromId(id) {
+      let hash = 0;
+      for (let index = 0; index < id.length; index += 1) {
+        hash = id.charCodeAt(index) + ((hash << 5) - hash);
+      }
+      const color = (hash & 0x00ffffff).toString(16).toUpperCase();
+      return `#${"000000".slice(color.length)}${color}`;
+    }
+
+    function escapeHtml(text) {
+      return String(text)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+</body>
+</html>
