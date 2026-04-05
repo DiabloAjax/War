@@ -3170,15 +3170,6 @@
     async function bootstrapRemoteState() {
       if (remoteStateDoc) {
         try {
-          const snapshot = await remoteStateDoc.get();
-          if (!snapshot.exists) {
-            await remoteStateDoc.set({
-              appState: state.app,
-              lang: state.lang,
-              updatedAt: Date.now()
-            });
-          }
-
           state.remoteReady = true;
           state.jsonPromptDismissed = true;
           el.jsonPromptModal.hidden = true;
@@ -3188,6 +3179,7 @@
           }
 
           state.remoteUnsubscribe = remoteStateDoc.onSnapshot((doc) => {
+            if (!doc.exists) return;
             const data = doc.data();
             if (!data) return;
 
@@ -3201,6 +3193,26 @@
             }
             render();
           }, handleError);
+
+          const snapshot = await remoteStateDoc.get();
+          if (snapshot.exists) {
+            const data = snapshot.data();
+            if (data?.appState && typeof data.appState === "object") {
+              state.app = normalizeState(data.appState);
+              writeStoredState(state.app);
+            }
+            if (data?.lang === "en" || data?.lang === "ru") {
+              state.lang = data.lang;
+              writeStoredLang(state.lang);
+            }
+            render();
+          } else if (hasMeaningfulAppState(state.app)) {
+            await remoteStateDoc.set({
+              appState: state.app,
+              lang: state.lang,
+              updatedAt: Date.now()
+            });
+          }
           return;
         } catch (error) {
           console.error(error);
@@ -4711,6 +4723,30 @@
 
     function clone(value) {
       return JSON.parse(JSON.stringify(value));
+    }
+
+    function hasMeaningfulAppState(appState) {
+      const normalized = normalizeState(appState || {});
+      if (normalized.locked) return true;
+      if (Array.isArray(normalized.history) && normalized.history.length > 0) return true;
+
+      for (const roomId of ROOM_IDS) {
+        if ((normalized.rooms[roomId] || []).length > 0) {
+          return true;
+        }
+      }
+
+      const playerEntries = Object.entries(normalized.players || {});
+      if (playerEntries.length !== 100) {
+        return true;
+      }
+
+      for (const [playerId, player] of playerEntries) {
+        if (player.name !== playerId) return true;
+        if (normalizePlayerScore(player.score) !== DEFAULT_PLAYER_SCORE) return true;
+      }
+
+      return false;
     }
 
     function isHex(value) {
