@@ -1,6 +1,6 @@
 
 <!DOCTYPE html>
-
+<!-- saved from url=(0033)https://diabloajax.github.io/War/ -->
 <html lang="en" data-bybit-channel-name="bkoLMOp9U6R-62HNDIbwX" data-bybit-is-default-wallet="true"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -3266,6 +3266,9 @@
 
     function maybeOpenJsonPromptModal() {
       if (remoteStateDoc) {
+        return;
+      }
+      if (/^https?:$/i.test(window.location.protocol)) {
         return;
       }
       if (state.jsonPromptDismissed || state.jsonFileHandle || !canUseJsonFileStorage()) {
